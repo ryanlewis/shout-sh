@@ -160,19 +160,28 @@ I'll stage all changes:
 - `git add -A` - add all new and modified files
 
 ### 9.2 Create Descriptive Commit
-I'll commit with a clear, descriptive message following conventional commit format:
-```
-feat($ARGUMENTS): implement [brief description]
+I'll commit following the project's **strict** conventional commit guidelines from CLAUDE.md:
 
-- Write comprehensive tests first (TDD approach)
-- Implement [key feature 1]
-- Implement [key feature 2]
-- Add GoDoc documentation for all exports
-- Update docs/tasks.md with implementation notes
-- Ensure >80% test coverage
+**IMPORTANT Commit Rules:**
+- **Very short messages**: First line ~60 chars max
+- **Conventional format**: `type(scope): message` or `type: message`
+- **No watermarks**: Never add "Generated with Claude" or emoji signatures
+- **Minimal body**: Additional lines only for breaking changes
+- **Always confirm**: Get user approval before committing
 
-Closes: $ARGUMENTS
+**Good Examples:**
 ```
+feat: initialize go module and project setup
+fix: handle empty text input correctly
+test: add party mode streaming tests
+```
+
+**Bad Examples (TOO LONG):**
+```
+feat($ARGUMENTS): implement comprehensive task with multiple features
+```
+
+I'll propose a short, clear commit message and confirm with you before committing.
 
 ## Step 10: Final Validation
 
