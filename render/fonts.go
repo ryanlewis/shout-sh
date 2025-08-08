@@ -252,4 +252,3 @@ func ValidateFont(path string) error {
 
 	return nil
 }
-

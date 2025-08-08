@@ -346,4 +346,3 @@ func TestLoadFontsEmptyAllowedList(t *testing.T) {
 		t.Errorf("Expected no fonts with empty allowed list, got %d", len(cache.fonts))
 	}
 }
-
