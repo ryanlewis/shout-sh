@@ -220,6 +220,7 @@ func loadFonts() error {
     
     fonts := config.Fonts.Fonts
     for _, name := range fonts {
+        // FIXME: we are using ryanlewis/go-figure now, so API is different
         renderer := figlet4go.NewAsciiRender()
         fontPath := fmt.Sprintf("%s/%s.flf", config.Fonts.Directory, name)
         
@@ -243,6 +244,7 @@ func loadFonts() error {
 - [ ] Font validation function implemented
 - [ ] Error handling for missing fonts
 - [ ] At least one font successfully loads
+- [ ] Tests for fonts that meet rendered examples at http://www.figlet.org/examples.html
 
 ---
 
