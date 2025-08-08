@@ -304,7 +304,7 @@ func TestConfig_Validation(t *testing.T) {
 			name: "Invalid streaming max timeout less than default",
 			envVars: map[string]string{
 				"SHOUT_STREAMING_DEFAULT_TIMEOUT": "100",
-				"SHOUT_STREAMING_MAX_TIMEOUT": "50",
+				"SHOUT_STREAMING_MAX_TIMEOUT":     "50",
 			},
 			wantErr: true,
 			errMsg:  "max timeout must be >= default timeout",
@@ -337,7 +337,7 @@ func TestConfig_Validation(t *testing.T) {
 			name: "Valid configuration",
 			envVars: map[string]string{
 				"SHOUT_SERVER_PUBLIC_PORT": "8080",
-				"SHOUT_SERVER_ADMIN_PORT": "9090",
+				"SHOUT_SERVER_ADMIN_PORT":  "9090",
 				"SHOUT_TEXT_DEFAULT_ALIGN": "left",
 			},
 			wantErr: false,
@@ -349,7 +349,7 @@ func TestConfig_Validation(t *testing.T) {
 			// Reset singleton for each test
 			Reset()
 			defer Reset()
-			
+
 			// Save and clear env
 			originalEnv := os.Environ()
 			os.Clearenv()
@@ -397,34 +397,34 @@ func TestConfig_GetPanicsWithoutLoad(t *testing.T) {
 func TestConfig_GetPanicsOnLoadError(t *testing.T) {
 	Reset()
 	defer Reset()
-	
+
 	// Set invalid config to cause load error
 	os.Setenv("SHOUT_SERVER_PUBLIC_PORT", "-1")
 	defer os.Unsetenv("SHOUT_SERVER_PUBLIC_PORT")
-	
+
 	// Try to load (will fail)
 	_, _ = Load()
-	
+
 	// Now Get() should panic because load failed
 	defer func() {
 		if r := recover(); r == nil {
 			t.Errorf("Get() did not panic when config loading failed")
 		}
 	}()
-	
+
 	Get()
 }
 
 func TestConfig_GetReturnsLoadedConfig(t *testing.T) {
 	Reset()
 	defer Reset()
-	
+
 	// Successfully load config
 	cfg1, err := Load()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
-	
+
 	// Get should return the same instance
 	cfg2 := Get()
 	if cfg1 != cfg2 {
@@ -489,11 +489,11 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 func TestConfig_LoadErrorHandling(t *testing.T) {
 	Reset()
 	defer Reset()
-	
+
 	// Set invalid env to cause parse error
 	os.Setenv("SHOUT_SERVER_PUBLIC_PORT", "not-a-number")
 	defer os.Unsetenv("SHOUT_SERVER_PUBLIC_PORT")
-	
+
 	cfg, err := Load()
 	if err == nil {
 		t.Error("Expected error when parsing invalid port, got nil")
