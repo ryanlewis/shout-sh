@@ -198,12 +198,48 @@ I'll go through each acceptance criterion and confirm it's met:
 - `goimports -l .` - list any files that need formatting (should return nothing)
 - `golangci-lint run ./...` - ensure no linting issues remain
 
-## Step 11: Task Completion
+## Step 11: Create Commit
 
-Once everything is verified:
-1. Update task status in docs/tasks.md (mark criteria as completed)
+After all tests pass and code is clean:
+
+### 11.1 Suggest Commit Message
+I'll propose a short, descriptive commit message following the conventional format:
+- Format: `type(scope): message` or `type: message`
+- First line ~60 chars max
+- No watermarks or emoji signatures
+
+**I'll suggest a commit message and wait for your confirmation before committing.**
+
+### 11.2 Commit with Approved Message
+Once you approve the message, I'll commit all changes:
+- `git add -A`
+- `git commit -m "approved message"`
+
+## Step 12: Integration Strategy
+
+After committing, I'll ask you to choose how to integrate the changes:
+
+### Option A: Direct Rebase onto Main
+- Fast and simple for small, clean changes
+- `git checkout main`
+- `git pull origin main` (if remote exists)
+- `git rebase feat/$ARGUMENTS-description main`
+- Results in linear history
+
+### Option B: Create Pull Request
+- Better for larger changes or when review is needed
+- `git push -u origin feat/$ARGUMENTS-description`
+- `gh pr create --title "type: brief description" --body "..."`
+- Allows for discussion and CI checks
+
+**I'll present both options and let you decide which approach to take.**
+
+## Step 13: Task Completion
+
+Once integrated:
+1. Update task status in docs/tasks.md (mark as completed)
 2. Note any follow-up tasks or improvements identified
-3. Prepare for PR if needed
+3. Document any lessons learned
 
 ## Progress Tracking
 
