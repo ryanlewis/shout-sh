@@ -86,12 +86,14 @@ func Load() (*Config, error) {
 		// Parse environment variables into config struct
 		if err := env.Parse(instance); err != nil {
 			loadErr = fmt.Errorf("failed to parse environment variables: %w", err)
+			instance = nil // Clear instance on error
 			return
 		}
 
 		// Validate configuration
 		if err := instance.Validate(); err != nil {
 			loadErr = fmt.Errorf("configuration validation failed: %w", err)
+			instance = nil // Clear instance on error
 			return
 		}
 	})

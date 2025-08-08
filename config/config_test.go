@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -236,7 +237,7 @@ func TestConfig_Validation(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "Invalid port - negative",
+			name: "Invalid public port - negative",
 			envVars: map[string]string{
 				"SHOUT_SERVER_PUBLIC_PORT": "-1",
 			},
@@ -244,9 +245,25 @@ func TestConfig_Validation(t *testing.T) {
 			errMsg:  "invalid port",
 		},
 		{
-			name: "Invalid port - too high",
+			name: "Invalid public port - too high",
 			envVars: map[string]string{
 				"SHOUT_SERVER_PUBLIC_PORT": "70000",
+			},
+			wantErr: true,
+			errMsg:  "invalid port",
+		},
+		{
+			name: "Invalid admin port - zero",
+			envVars: map[string]string{
+				"SHOUT_SERVER_ADMIN_PORT": "0",
+			},
+			wantErr: true,
+			errMsg:  "invalid port",
+		},
+		{
+			name: "Invalid admin port - too high",
+			envVars: map[string]string{
+				"SHOUT_SERVER_ADMIN_PORT": "65536",
 			},
 			wantErr: true,
 			errMsg:  "invalid port",
@@ -260,6 +277,14 @@ func TestConfig_Validation(t *testing.T) {
 			errMsg:  "rate limit must be positive",
 		},
 		{
+			name: "Invalid rate limit burst",
+			envVars: map[string]string{
+				"SHOUT_RATELIMIT_BURST": "0",
+			},
+			wantErr: true,
+			errMsg:  "rate limit burst must be positive",
+		},
+		{
 			name: "Invalid max text length",
 			envVars: map[string]string{
 				"SHOUT_TEXT_MAX_LENGTH": "0",
@@ -270,10 +295,35 @@ func TestConfig_Validation(t *testing.T) {
 		{
 			name: "Invalid streaming timeout",
 			envVars: map[string]string{
-				"SHOUT_STREAMING_DEFAULT_TIMEOUT": "-1",
+				"SHOUT_STREAMING_DEFAULT_TIMEOUT": "0",
 			},
 			wantErr: true,
 			errMsg:  "timeout must be positive",
+		},
+		{
+			name: "Invalid streaming max timeout less than default",
+			envVars: map[string]string{
+				"SHOUT_STREAMING_DEFAULT_TIMEOUT": "100",
+				"SHOUT_STREAMING_MAX_TIMEOUT": "50",
+			},
+			wantErr: true,
+			errMsg:  "max timeout must be >= default timeout",
+		},
+		{
+			name: "Invalid streaming speed - too low",
+			envVars: map[string]string{
+				"SHOUT_STREAMING_DEFAULT_SPEED": "0",
+			},
+			wantErr: true,
+			errMsg:  "streaming speed must be between 1 and 10",
+		},
+		{
+			name: "Invalid streaming speed - too high",
+			envVars: map[string]string{
+				"SHOUT_STREAMING_DEFAULT_SPEED": "11",
+			},
+			wantErr: true,
+			errMsg:  "streaming speed must be between 1 and 10",
 		},
 		{
 			name: "Invalid align value",
@@ -283,10 +333,23 @@ func TestConfig_Validation(t *testing.T) {
 			wantErr: true,
 			errMsg:  "invalid alignment",
 		},
+		{
+			name: "Valid configuration",
+			envVars: map[string]string{
+				"SHOUT_SERVER_PUBLIC_PORT": "8080",
+				"SHOUT_SERVER_ADMIN_PORT": "9090",
+				"SHOUT_TEXT_DEFAULT_ALIGN": "left",
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset singleton for each test
+			Reset()
+			defer Reset()
+			
 			// Save and clear env
 			originalEnv := os.Environ()
 			os.Clearenv()
@@ -329,6 +392,47 @@ func TestConfig_GetPanicsWithoutLoad(t *testing.T) {
 	}()
 
 	Get()
+}
+
+func TestConfig_GetPanicsOnLoadError(t *testing.T) {
+	Reset()
+	defer Reset()
+	
+	// Set invalid config to cause load error
+	os.Setenv("SHOUT_SERVER_PUBLIC_PORT", "-1")
+	defer os.Unsetenv("SHOUT_SERVER_PUBLIC_PORT")
+	
+	// Try to load (will fail)
+	_, _ = Load()
+	
+	// Now Get() should panic because load failed
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Get() did not panic when config loading failed")
+		}
+	}()
+	
+	Get()
+}
+
+func TestConfig_GetReturnsLoadedConfig(t *testing.T) {
+	Reset()
+	defer Reset()
+	
+	// Successfully load config
+	cfg1, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	
+	// Get should return the same instance
+	cfg2 := Get()
+	if cfg1 != cfg2 {
+		t.Error("Get() did not return the same instance as Load()")
+	}
+	if cfg2.Version != "dev" {
+		t.Errorf("Get() returned config with wrong version: %s", cfg2.Version)
+	}
 }
 
 func TestConfig_MustLoad(t *testing.T) {
@@ -379,6 +483,26 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	}
 	if cfg.Server.PublicPort != 5000 {
 		t.Errorf("PublicPort = %d, want 5000", cfg.Server.PublicPort)
+	}
+}
+
+func TestConfig_LoadErrorHandling(t *testing.T) {
+	Reset()
+	defer Reset()
+	
+	// Set invalid env to cause parse error
+	os.Setenv("SHOUT_SERVER_PUBLIC_PORT", "not-a-number")
+	defer os.Unsetenv("SHOUT_SERVER_PUBLIC_PORT")
+	
+	cfg, err := Load()
+	if err == nil {
+		t.Error("Expected error when parsing invalid port, got nil")
+	}
+	if cfg != nil {
+		t.Error("Expected nil config on error")
+	}
+	if !strings.Contains(err.Error(), "failed to parse") {
+		t.Errorf("Expected parse error, got: %v", err)
 	}
 }
 
