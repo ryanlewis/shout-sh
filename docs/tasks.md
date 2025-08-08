@@ -144,11 +144,22 @@ Define configuration struct with all application settings using caarlos0/env tag
 **Dependencies:** SHO-003, SHO-004
 
 **Acceptance Criteria:**
-- [ ] Config struct defined with all settings
-- [ ] Default values specified as env tags
-- [ ] Nested structs for logical grouping (Server, RateLimit, Fonts, etc.)
-- [ ] All constants defined as struct fields with defaults
-- [ ] Version field included in config
+- [x] Config struct defined with all settings
+- [x] Default values specified as env tags
+- [x] Nested structs for logical grouping (Server, RateLimit, Fonts, etc.)
+- [x] All constants defined as struct fields with defaults
+- [x] Version field included in config
+
+**Implementation Notes:**
+- Used TDD approach with comprehensive test coverage (76.8%)
+- Implemented singleton pattern with thread-safe loading
+- Created nested config structs: ServerConfig, RateLimitConfig, FontConfig, StreamingConfig, TextConfig
+- Added validation for all configuration values
+- Included helper functions: Get(), MustLoad(), LoadFromEnv(), Reset()
+- Properly handles .env file loading with godotenv
+- All struct fields use env tags with SHOUT_ prefix
+- Test suite includes validation tests, env override tests, and .env file loading tests
+- Fixed singleton reset issues in tests by properly unsetting environment variables
 
 ---
 
