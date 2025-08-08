@@ -35,9 +35,9 @@ Note: If this is task SHO-001, I'll ensure the following tools are installed:
 ## Step 3: Create Feature Branch
 
 I'll create a descriptive feature branch for this task based on what it implements:
-- Example: `git checkout -b feature/$ARGUMENTS-config-loading` (for configuration task)
-- Example: `git checkout -b feature/$ARGUMENTS-ascii-generation` (for ASCII art task)
-- The branch name will follow the pattern: `feature/TASK-ID-brief-description`
+- Example: `git checkout -b feat/$ARGUMENTS-config-loading` (for configuration task)
+- Example: `git checkout -b feat/$ARGUMENTS-ascii-generation` (for ASCII art task)
+- The branch name will follow the pattern: `feat/TASK-ID-brief-description`
 
 ## Step 4: Implementation Planning
 
