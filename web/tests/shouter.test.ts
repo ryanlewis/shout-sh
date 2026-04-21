@@ -9,6 +9,10 @@ const initial: Omit<UrlState, 'text'> = {
 	preset: '',
 	once: false,
 	fps: 10,
+	letterSpacing: 1,
+	maxLength: 0,
+	padding: 2,
+	background: '',
 };
 
 describe('Shouter', () => {

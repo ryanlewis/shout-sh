@@ -3,6 +3,7 @@
 import type { UrlState } from '../urls.js';
 import type { FontName } from './FontPicker.js';
 import type { Mode } from './Controls.js';
+import type { AdvancedState } from './Advanced.js';
 
 export interface ShouterOpts {
 	input: HTMLInputElement;
@@ -17,6 +18,7 @@ export interface ShouterHandle {
 	setPreset(preset: string): void;
 	setOnce(once: boolean): void;
 	setFps(fps: number): void;
+	setAdvanced(advanced: AdvancedState): void;
 	state(): UrlState;
 }
 
@@ -57,6 +59,10 @@ export function mountShouter(opts: ShouterOpts): ShouterHandle {
 		},
 		setFps(fps) {
 			state = { ...state, fps };
+			flush();
+		},
+		setAdvanced(advanced) {
+			state = { ...state, ...advanced };
 			flush();
 		},
 		state() {

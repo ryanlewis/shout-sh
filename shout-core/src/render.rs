@@ -6,7 +6,7 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-use cfonts::{Colors, Options, Rgb, render};
+use cfonts::{BgColors, Colors, Env, Options, Rgb, render};
 
 use crate::fonts::{self, resolve};
 use crate::parser::{Mode, RenderConfig};
@@ -58,6 +58,33 @@ fn color_enum(name: &str) -> Option<Colors> {
 
 pub fn is_color(name: &str) -> bool {
     color_enum(name).is_some()
+}
+
+fn bg_color_enum(name: &str) -> Option<BgColors> {
+    Some(match name {
+        "" | "transparent" => BgColors::Transparent,
+        "black" => BgColors::Black,
+        "red" => BgColors::Red,
+        "green" => BgColors::Green,
+        "blue" => BgColors::Blue,
+        "yellow" => BgColors::Yellow,
+        "cyan" => BgColors::Cyan,
+        "magenta" => BgColors::Magenta,
+        "white" => BgColors::White,
+        "gray" => BgColors::Gray,
+        "redbright" => BgColors::RedBright,
+        "greenbright" => BgColors::GreenBright,
+        "bluebright" => BgColors::BlueBright,
+        "yellowbright" => BgColors::YellowBright,
+        "cyanbright" => BgColors::CyanBright,
+        "magentabright" => BgColors::MagentaBright,
+        "whitebright" => BgColors::WhiteBright,
+        _ => return None,
+    })
+}
+
+pub fn is_bg_color(name: &str) -> bool {
+    bg_color_enum(name).is_some()
 }
 
 /// For shader-driven modes: paint each of the font's slots with a distinct
@@ -120,9 +147,17 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
 
     let font = resolve(&cfg.font).ok_or(RenderError::UnknownFont)?;
 
+    // cfonts' own `spaceless=false` hardcodes 2 blank rows above + below.
+    // Always pass `spaceless=true` so we can add `cfg.padding` rows ourselves
+    // — gives the caller a continuous 0..=MAX_PADDING knob.
     let mut opts = Options {
         text: cfg.text.clone(),
         font,
+        letter_spacing: cfg.letter_spacing,
+        max_length: cfg.max_length,
+        spaceless: true,
+        background: bg_color_enum(&cfg.background).unwrap_or(BgColors::Transparent),
+        env: if cfg.browser { Env::Browser } else { Env::Cli },
         ..Options::default()
     };
 
@@ -167,7 +202,77 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
         }
     }
 
-    Ok(render(opts).text)
+    let raw = render(opts).text;
+    let normalized = if cfg.browser {
+        browser_to_sgr(&raw)
+    } else {
+        raw
+    };
+    Ok(pad_vertically(&normalized, cfg.padding))
+}
+
+/// Convert cfonts `Env::Browser` output into the SGR-bearing text our cell
+/// pipeline expects. Browser output wraps everything in a `<div>…</div>`,
+/// separates rows with `<br>\n`, and colors letters via
+/// `<span style="color:#rrggbb">…</span>`. We strip the wrapper, remove the
+/// `<br>` markers, and rewrite the spans as truecolor SGR escapes. This lets
+/// us opt into `Env::Browser`'s 0xFFFF wrap width without adopting its HTML
+/// output format.
+fn browser_to_sgr(s: &str) -> String {
+    let after_open = s.split_once('>').map(|(_, rest)| rest).unwrap_or(s);
+    let body = after_open.strip_suffix("</div>").unwrap_or(after_open);
+
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while !rest.is_empty() {
+        if let Some(lt) = rest.find('<') {
+            out.push_str(&rest[..lt]);
+            rest = &rest[lt..];
+            let end = match rest.find('>') {
+                Some(e) => e,
+                None => {
+                    out.push_str(rest);
+                    break;
+                }
+            };
+            let tag = &rest[..=end];
+            if let Some(hex) = tag
+                .strip_prefix("<span style=\"color:#")
+                .and_then(|r| r.strip_suffix("\">"))
+                && hex.len() == 6
+            {
+                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+                let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
+            } else if tag == "</span>" {
+                out.push_str("\x1b[39m");
+            }
+            // `<br>` and any other unknown tag: drop. The row break after `<br>`
+            // is already carried by the following '\n'.
+            rest = &rest[end + 1..];
+        } else {
+            out.push_str(rest);
+            break;
+        }
+    }
+    out
+}
+
+/// Prepend and append `n` blank rows to the cfonts output. `n` newline chars
+/// before the first glyph row (each is a row-break into a new empty row),
+/// and `n` after the last glyph row.
+fn pad_vertically(s: &str, n: u16) -> String {
+    if n == 0 {
+        return s.to_string();
+    }
+    let pad: String = "\n".repeat(n as usize);
+    let mut out = String::with_capacity(s.len() + pad.len() * 2);
+    out.push_str(&pad);
+    out.push_str(s);
+    out.push_str(&pad);
+    out
 }
 
 /// Parse cfonts output into cells for the streaming pipeline.
@@ -375,6 +480,37 @@ mod tests {
         let has_s0 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[0]));
         let has_s1 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[1]));
         assert!(has_s0 && has_s1, "expected both slot sentinels in cells");
+    }
+
+    #[test]
+    fn browser_to_sgr_strips_wrapper_and_rewrites_spans() {
+        let in_ = "<div style=\"font-family:monospace\"><span style=\"color:#ff00aa\">A█</span><br>\n<span style=\"color:#00aaff\">B</span></div>";
+        let got = browser_to_sgr(in_);
+        assert_eq!(got, "\x1b[38;2;255;0;170mA█\x1b[39m\n\x1b[38;2;0;170;255mB\x1b[39m");
+    }
+
+    #[test]
+    fn browser_no_wrap_at_80_cols() {
+        // Long input that would wrap at terminal_width=80 in Env::Cli. In
+        // browser mode the wrap ceiling is 0xFFFF, so output stays one line.
+        let cfg = RenderConfig {
+            text: "ABCDEFGHIJ".into(),
+            font: "block".into(),
+            browser: true,
+            padding: 0,
+            ..Default::default()
+        };
+        let out = render_config(&cfg).unwrap();
+        // block font is 6 rows tall — one unwrapped banner should produce 5
+        // newlines (between rows). A wrap would double that.
+        let lines = out.matches('\n').count();
+        assert!(
+            lines <= 6,
+            "expected <=6 line breaks (one banner), got {lines} in {out:?}"
+        );
+        // The Env::Browser wrapper div must have been scrubbed.
+        assert!(!out.contains("<div"), "div wrapper leaked: {out:?}");
+        assert!(!out.contains("<br>"), "<br> leaked: {out:?}");
     }
 
     #[test]

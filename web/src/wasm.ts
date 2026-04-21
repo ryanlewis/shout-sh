@@ -15,6 +15,10 @@ export interface PlaygroundCfg {
 	mode: 'solid' | 'rainbow' | 'fire';
 	color: string;
 	preset: string;
+	letterSpacing?: number;
+	maxLength?: number;
+	padding?: number;
+	background?: string;
 }
 
 export async function loadWasm(wasmUrl: string): Promise<Wasm> {

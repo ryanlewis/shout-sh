@@ -22,6 +22,16 @@ pub const MAX_FPS: u32 = 30;
 pub const DEFAULT_TIMEOUT: u32 = 60;
 pub const MAX_TIMEOUT: u32 = 300;
 
+pub const DEFAULT_LETTER_SPACING: u16 = 1;
+pub const MAX_LETTER_SPACING: u16 = 10;
+/// Blank rows above and below the banner. Replaces cfonts' hardcoded
+/// 2-row padding (which is toggled on/off by `spaceless`) with a continuous
+/// knob. Default 2 to match cfonts' non-spaceless behavior.
+pub const DEFAULT_PADDING: u16 = 2;
+pub const MAX_PADDING: u16 = 10;
+/// 0 means "no limit" — cfonts treats it that way too.
+pub const MAX_MAX_LENGTH: u16 = 200;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Solid,
@@ -52,6 +62,15 @@ pub struct RenderConfig {
     pub once: bool,
     pub fps: u32,
     pub timeout: u32,
+    pub letter_spacing: u16,
+    pub max_length: u16,
+    pub padding: u16,
+    pub background: String,
+    /// Internal: when true, render.rs drives cfonts with `Env::Browser` so
+    /// its terminal-width-based wrapping is lifted (cfonts falls back to 80
+    /// cols when there's no tty, which is always the case in wasm). Output
+    /// is normalized back to the SGR format the cell pipeline expects.
+    pub browser: bool,
 }
 
 impl Default for RenderConfig {
@@ -67,6 +86,11 @@ impl Default for RenderConfig {
             once: false,
             fps: DEFAULT_FPS,
             timeout: DEFAULT_TIMEOUT,
+            letter_spacing: DEFAULT_LETTER_SPACING,
+            max_length: 0,
+            padding: DEFAULT_PADDING,
+            background: String::new(),
+            browser: false,
         }
     }
 }
@@ -139,6 +163,10 @@ fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
         } else if tok == "once" {
             cfg.once = true;
             matched = true;
+        } else if tok == "spaceless" {
+            // Legacy alias: `spaceless` === `padding=0`.
+            cfg.padding = 0;
+            matched = true;
         } else if is_layout(&tok) {
             matched = true;
         } else if let Some(rest) = tok.strip_prefix('w')
@@ -167,6 +195,7 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
             match k {
                 "animate" => cfg.animate = true,
                 "once" => cfg.once = true,
+                "spaceless" => cfg.padding = 0,
                 _ => {}
             }
             continue;
@@ -186,6 +215,27 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
             "timeout" => {
                 if let Ok(n) = v.parse::<u32>() {
                     cfg.timeout = clamp_timeout(n);
+                }
+            }
+            "spacing" | "letter-spacing" | "letter_spacing" | "ls" => {
+                if let Ok(n) = v.parse::<u16>() {
+                    cfg.letter_spacing = n.min(MAX_LETTER_SPACING);
+                }
+            }
+            "padding" | "pad" => {
+                if let Ok(n) = v.parse::<u16>() {
+                    cfg.padding = n.min(MAX_PADDING);
+                }
+            }
+            "maxlength" | "max-length" | "max_length" | "ml" => {
+                if let Ok(n) = v.parse::<u16>() {
+                    cfg.max_length = n.min(MAX_MAX_LENGTH);
+                }
+            }
+            "bg" | "background" => cfg.background = v,
+            "spaceless" => {
+                if v != "0" && v != "false" {
+                    cfg.padding = 0;
                 }
             }
             _ => {}

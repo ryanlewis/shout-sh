@@ -77,6 +77,51 @@
 						</div>
 					</div>
 
+					<details class="adv">
+						<summary class="adv__summary">
+							<span class="adv__caret" aria-hidden="true"></span>advanced options
+						</summary>
+						<div class="adv__body">
+							<div class="opt opt--num">
+								<label class="opt__label" for="ls-in">LETTER&nbsp;SPACING</label>
+								<input id="ls-in" type="range" min="0" max="10" value="1" />
+								<span id="ls-val" class="fps-val">1</span>
+							</div>
+							<div class="opt opt--num">
+								<label class="opt__label" for="pad-in">PADDING</label>
+								<input id="pad-in" type="range" min="0" max="10" value="2" />
+								<span id="pad-val" class="fps-val">2</span>
+							</div>
+							<div class="opt opt--num">
+								<label class="opt__label" for="ml-in">MAX&nbsp;LENGTH</label>
+								<input id="ml-in" type="number" min="0" max="200" step="1" value="0" class="num-in" />
+								<span class="hint">0 = no limit</span>
+							</div>
+							<div class="opt">
+								<label class="opt__label" for="bg-in">BACKGROUND</label>
+								<select id="bg-in" class="select-in">
+									<option value="">transparent</option>
+									<option value="black">black</option>
+									<option value="red">red</option>
+									<option value="green">green</option>
+									<option value="yellow">yellow</option>
+									<option value="blue">blue</option>
+									<option value="magenta">magenta</option>
+									<option value="cyan">cyan</option>
+									<option value="white">white</option>
+									<option value="gray">gray</option>
+									<option value="redbright">red bright</option>
+									<option value="greenbright">green bright</option>
+									<option value="yellowbright">yellow bright</option>
+									<option value="bluebright">blue bright</option>
+									<option value="magentabright">magenta bright</option>
+									<option value="cyanbright">cyan bright</option>
+									<option value="whitebright">white bright</option>
+								</select>
+							</div>
+						</div>
+					</details>
+
 					<div class="frame" aria-live="polite" aria-busy="true">
 						<div class="term-prompt"><span class="ps" aria-hidden="true">guest@shout:~$&nbsp;</span><span id="term-cmd">curl shout.sh/rainbow/HELLO</span></div>
 						<pre id="frame" class="shout-frame loading">loading playground…</pre>

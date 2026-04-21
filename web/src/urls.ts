@@ -7,10 +7,16 @@ import type { PlaygroundCfg } from './wasm.js';
 export interface UrlState extends PlaygroundCfg {
 	once: boolean;
 	fps: number;
+	letterSpacing: number;
+	maxLength: number;
+	padding: number;
+	background: string;
 }
 
 const DEFAULT_FONT = 'block';
 const DEFAULT_FPS = 10;
+const DEFAULT_LETTER_SPACING = 1;
+const DEFAULT_PADDING = 2;
 
 export function buildPath(state: UrlState): string {
 	const directives: string[] = [];
@@ -26,7 +32,15 @@ export function buildPath(state: UrlState): string {
 
 	const text = encodeURIComponent(state.text || '').replace(/%20/g, '+');
 	const head = directives.length ? `${directives.join('+')}/` : '';
-	const query = state.fps !== DEFAULT_FPS ? `?fps=${state.fps}` : '';
+
+	const params: string[] = [];
+	if (state.fps !== DEFAULT_FPS) params.push(`fps=${state.fps}`);
+	if (state.letterSpacing !== DEFAULT_LETTER_SPACING)
+		params.push(`spacing=${state.letterSpacing}`);
+	if (state.padding !== DEFAULT_PADDING) params.push(`padding=${state.padding}`);
+	if (state.maxLength > 0) params.push(`maxlength=${state.maxLength}`);
+	if (state.background) params.push(`bg=${state.background}`);
+	const query = params.length ? `?${params.join('&')}` : '';
 	return `/${head}${text}${query}`;
 }
 

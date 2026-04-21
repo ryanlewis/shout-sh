@@ -10,6 +10,7 @@ import { mountControls, type Mode } from './ui/Controls.js';
 import { mountCurlSnippet } from './ui/CurlSnippet.js';
 import { mountShouter } from './ui/Shouter.js';
 import { mountBlockCaret } from './ui/BlockCaret.js';
+import { mountAdvanced, BG_CSS } from './ui/Advanced.js';
 
 const WASM_URL = '/_app/shout_wasm_bg.wasm';
 
@@ -22,6 +23,12 @@ async function main(): Promise<void> {
 	const onceCb = must<HTMLInputElement>('#once-cb');
 	const fpsIn = must<HTMLInputElement>('#fps-in');
 	const fpsVal = must<HTMLElement>('#fps-val');
+	const lsIn = must<HTMLInputElement>('#ls-in');
+	const lsVal = must<HTMLElement>('#ls-val');
+	const padIn = must<HTMLInputElement>('#pad-in');
+	const padVal = must<HTMLElement>('#pad-val');
+	const mlIn = must<HTMLInputElement>('#ml-in');
+	const bgIn = must<HTMLSelectElement>('#bg-in');
 	const curlOut = must<HTMLElement>('#curl-cmd');
 	const termCmd = must<HTMLElement>('#term-cmd');
 	const copyBtn = must<HTMLButtonElement>('#copy-btn');
@@ -70,8 +77,15 @@ async function main(): Promise<void> {
 			mode: state.mode,
 			color: state.color,
 			preset: state.preset,
+			letterSpacing: state.letterSpacing,
+			maxLength: state.maxLength,
+			padding: state.padding,
+			background: state.background,
 		};
 		preview.update(cfg, { fps: state.fps, once: state.once });
+		// cfonts' BG SGR is stripped by the cell pipeline, so mirror the
+		// selected background onto the frame container ourselves.
+		frame.style.background = BG_CSS[state.background] ?? '';
 		renderCurl(state);
 		// Mirror the curl command inside the fake prompt — sells the terminal
 		// metaphor, and matches the copy-snippet below verbatim.
@@ -87,6 +101,10 @@ async function main(): Promise<void> {
 			preset: '',
 			once: false,
 			fps: 10,
+			letterSpacing: 1,
+			maxLength: 0,
+			padding: 2,
+			background: '',
 		},
 		onChange: push,
 	});
@@ -108,6 +126,15 @@ async function main(): Promise<void> {
 		},
 		onOnceChange: (once) => shouter.setOnce(once),
 		onFpsChange: (fps) => shouter.setFps(fps),
+	});
+	mountAdvanced({
+		letterSpacingInput: lsIn,
+		letterSpacingValue: lsVal,
+		paddingInput: padIn,
+		paddingValue: padVal,
+		maxLengthInput: mlIn,
+		backgroundSelect: bgIn,
+		onChange: (adv) => shouter.setAdvanced(adv),
 	});
 }
 
