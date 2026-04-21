@@ -1,114 +1,105 @@
 # shout.sh
 
-A tiny HTTP server that renders FIGlet text, optionally colored or animated,
-over `curl`. Think [parrot.live] for your own ASCII banners.
-
-[parrot.live]: https://parrot.live
+a tiny http server that renders stylized ascii banners over `curl`.
 
 ```
-curl shout.sh/HELLO
-curl shout.sh/slant/Hello+World
-curl -N shout.sh/rainbow/Hi        # animated by default
-curl shout.sh/rainbow+once/Hi      # single frame
+$ curl shout.sh/HELLO
+$ curl shout.sh/tiny/hello+world
+$ curl shout.sh/red/alert
+$ curl shout.sh/fire/boom
 ```
 
-## Usage
+phase 1 is static. phase 2 will add animation.
 
-Everything happens in the URL path. The first segment is an optional set of
-`+`-joined directives; the rest is the text. Spaces are `+`.
+## usage
 
-```
-curl shout.sh/{directives}/{text}
-```
-
-Directives are classified in order: **font**, **mode**, **color**, **flag**,
-**layout**, **width**. Unknown tokens are ignored. If no directive in the first
-segment matches, the whole path is treated as text.
-
-### Fonts
+everything lives in the url path. the first segment is an optional set of
+`+`-joined directives; the rest is the text. spaces are `+`.
 
 ```
-curl shout.sh/big/Hello+World
-curl shout.sh/slant/Hello+World
-curl shout.sh/fonts          # list all
-curl shout.sh/fonts/slant    # preview one
+$ curl shout.sh/{directives}/{text}
 ```
 
-### Color
+directives are classified in order: **font**, **mode**, **color**. unknown
+tokens are ignored. if no directive in the first segment matches, the whole
+path is treated as text.
 
-Named color means solid mode:
+### fonts
 
-```
-curl shout.sh/red/Hi
-curl shout.sh/cyan/Hi
-```
-
-Available: `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `orange`,
-`white`.
-
-### Modes (shaders)
-
-Dynamic shaders animate by default — use `curl -N` to disable curl's output
-buffering so you see frames as they arrive:
+13 fonts, courtesy of [cfonts]:
 
 ```
-curl -N shout.sh/rainbow/Hi
-curl -N shout.sh/fire/Hi
-curl -N shout.sh/matrix/Hi
+block (default), slick, tiny, grid, pallet, shade, chrome,
+simple, simpleblock, 3d, simple3d, huge, console
 ```
 
-Add `once` to render a single static frame instead:
-
 ```
-curl shout.sh/rainbow+once/Hi
-```
-
-`solid` (and any bare color) never animates — every frame would be identical.
-
-### Layout & width
-
-```
-curl shout.sh/slant+w120/Hi
-curl shout.sh/full/Hi       # full-width spacing
-curl shout.sh/kern/Hi       # kerning
-curl shout.sh/smush/Hi      # smushing
+$ curl shout.sh/tiny/hello+world
+$ curl shout.sh/fonts         # list
+$ curl shout.sh/fonts/block   # preview
 ```
 
-### Query params
+### colors
 
-Query params override path directives:
-
-```
-curl "shout.sh/Hi?font=slant&mode=rainbow&width=100"
-curl "shout.sh/Hi?format=json"
-```
-
-Supported: `font`, `layout`, `mode`, `color`, `width`, `animate`, `once`,
-`fps`, `timeout`, `format`.
-
-## Endpoints
-
-| Path           | Description             |
-| -------------- | ----------------------- |
-| `/`            | Help page               |
-| `/{text}`      | Render text             |
-| `/fonts`       | List available fonts    |
-| `/fonts/{name}`| Preview a font          |
-| `/health`      | Health check            |
-
-## Development
+naming a color implies solid mode:
 
 ```
-just              # list targets
-just run          # go run . on :8080
-just test         # go test -race
-just lint         # golangci-lint
-just ci           # lint + test + build
+$ curl shout.sh/red/hi
+$ curl shout.sh/cyanbright/ok
 ```
 
-Built on [figgo](https://github.com/ryanlewis/figgo) (FIGfont rendering) and
-[tint](https://github.com/ryanlewis/tint) (ANSI shaders).
+available: `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `white`,
+`gray`, and a `*bright` variant of each.
 
-## License
+### modes
 
-MIT
+```
+$ curl shout.sh/solid/hi       # solid white (or pair with a color)
+$ curl shout.sh/rainbow/hi     # per-char bright palette
+$ curl shout.sh/fire/hi        # red -> orange -> yellow gradient
+```
+
+dynamic modes are not animated in phase 1. they will be in phase 2.
+
+### query params
+
+```
+$ curl 'shout.sh/hi?font=tiny&mode=fire'
+$ curl 'shout.sh/HELLO?format=json'
+```
+
+supported: `font`, `mode`, `color`, `format`. query params override path
+directives.
+
+## endpoints
+
+| path            | description          |
+| --------------- | -------------------- |
+| `/`             | plain-text help      |
+| `/{text}`       | render text          |
+| `/{dir}/{text}` | render with config   |
+| `/fonts`        | list fonts           |
+| `/fonts/{name}` | preview a font       |
+| `/health`       | health check         |
+
+## development
+
+```
+$ just         # list targets
+$ just run     # cargo run on :8080
+$ just test    # cargo test
+$ just lint    # fmt check + clippy -D warnings
+$ just ci      # lint + test + release build
+```
+
+`PORT` env var overrides the default `8080`.
+
+## license
+
+`shout.sh` is licensed under the gnu general public license v3.0 or later.
+see `LICENSE` for the full text.
+
+built with [cfonts] (gpl-3.0-or-later). linking cfonts in-process makes the
+combined work gpl-3 — fine for this project.
+
+[cfonts]: https://github.com/dominikwilkowski/cfonts

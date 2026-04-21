@@ -1,107 +1,35 @@
-// Phase-0 spike: prove out cfonts's Rust API and inspect its output shape so we
-// can judge whether phase-2 animation (post-filtering pre-colored ANSI) is
-// tractable. Not shipping code — will be replaced by the real service.
+// shout.sh — curl-friendly ANSI banner service
+// Copyright (C) 2026 Ryan Lewis
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
 
-use cfonts::{render, Align, BgColors, Colors, Env, Fonts, Options, Rgb};
+use std::net::SocketAddr;
 
-fn banner(label: &str) {
-    println!("\n===== {} =====", label);
-}
-
-fn dump(label: &str, opts: Options) {
-    banner(label);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(opts)));
-    match result {
-        Ok(out) => {
-            println!("lines: {}", out.lines);
-            println!("vec entries: {}", out.vec.len());
-            println!("--- text ---");
-            println!("{}", out.text);
-            println!("--- first line (debug, shows escapes) ---");
-            if let Some(first) = out.vec.first() {
-                println!("{:?}", first);
-            }
+#[tokio::main]
+async fn main() {
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8080);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("bind {addr} failed: {e}");
+            std::process::exit(1);
         }
-        Err(_) => {
-            println!("PANICKED");
-        }
+    };
+    eprintln!("shout.sh listening on {addr}");
+    if let Err(e) = axum::serve(listener, shout::app()).await {
+        eprintln!("serve error: {e}");
+        std::process::exit(1);
     }
-}
-
-fn main() {
-    dump(
-        "block / single color (red)",
-        Options {
-            text: "HI".into(),
-            font: Fonts::FontBlock,
-            colors: vec![Colors::Red],
-            ..Options::default()
-        },
-    );
-
-    dump(
-        "block / two-color gradient NAMED (red -> blue)",
-        Options {
-            text: "HI".into(),
-            font: Fonts::FontBlock,
-            gradient: vec!["red".into(), "blue".into()],
-            ..Options::default()
-        },
-    );
-
-    dump(
-        "block / two-color gradient HEX (#ff0000 -> #0000ff)",
-        Options {
-            text: "HI".into(),
-            font: Fonts::FontBlock,
-            gradient: vec!["#ff0000".into(), "#0000ff".into()],
-            ..Options::default()
-        },
-    );
-
-    dump(
-        "block / transition gradient HEX",
-        Options {
-            text: "HI".into(),
-            font: Fonts::FontBlock,
-            gradient: vec!["#ff0000".into(), "#00ff00".into(), "#0000ff".into()],
-            transition_gradient: true,
-            ..Options::default()
-        },
-    );
-
-    dump(
-        "tiny / candy",
-        Options {
-            text: "Hello World".into(),
-            font: Fonts::FontTiny,
-            colors: vec![Colors::Candy],
-            ..Options::default()
-        },
-    );
-
-    dump(
-        "3d / rgb custom",
-        Options {
-            text: "3D".into(),
-            font: Fonts::Font3d,
-            colors: vec![Colors::Rgb(Rgb::Val(255, 100, 50))],
-            background: BgColors::Transparent,
-            align: Align::Left,
-            ..Options::default()
-        },
-    );
-
-    // Key phase-2 question: does Env::Browser give uncolored output we can
-    // re-color each frame?
-    dump(
-        "block / Env::Browser (inspect for uncolored output)",
-        Options {
-            text: "HI".into(),
-            font: Fonts::FontBlock,
-            colors: vec![Colors::Red],
-            env: Env::Browser,
-            ..Options::default()
-        },
-    );
 }
