@@ -1,86 +1,30 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool
-*.out
-coverage.html
-coverage.txt
-
-# Dependency directories
-vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# Build output
-/shout
-dist/
-build/
+# Rust
+/target
+/shout-wasm/target/
+**/*.rs.bk
 
 # wasm + web build artifacts
 /shout-wasm/pkg/
-/shout-wasm/target/
 /web/src/wasm-pkg/
 /web/dist/
 /web/node_modules/
 
-# IDE specific files
+# IDE / editor
 .idea/
 *.iml
 .vscode/
 *.swp
 *.swo
 *~
-.DS_Store
+*.bak
 
-# Environment variables
+# Environment
 .env
 .env.local
 
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.temp
-
-# Debug files (Delve debugger output)
-__debug_bin*
-
-# Profiling data
-*.prof
-*.pprof
-
-# Benchmark results
-*.bench
-
-# Generated files
-*.generated.go
-
-# Log files
-*.log
-
-# Test reports
-*.xml
-test-results/
-
-# OS generated files
-Thumbs.db
+# OS
 .DS_Store
-Desktop.ini
+Thumbs.db
 
-# Editor backup files
-*.bak
-*.backup
-
-
-# Added by cargo
-
-/target
+# Logs
+*.log
