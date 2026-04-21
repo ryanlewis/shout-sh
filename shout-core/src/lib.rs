@@ -14,6 +14,7 @@
 //! Pure rendering pipeline shared by the server and the wasm playground.
 //! Zero async / HTTP / tokio deps — depends only on `cfonts`.
 
+pub mod emit_html;
 pub mod fonts;
 pub mod parser;
 pub mod render;
