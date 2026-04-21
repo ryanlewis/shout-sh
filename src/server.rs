@@ -21,8 +21,8 @@ use axum::routing::get;
 use crate::fonts;
 use crate::parser::{Mode, RenderConfig, parse};
 use crate::render::{RenderError, banner, emit_shaded, render_cells, render_config};
-use crate::sgr::{self, Cell};
-use crate::shader::{Fire, Identity, Rainbow};
+use crate::sgr::{self, Cell, ansi};
+use crate::shader::{Filter, Fire, Identity, Rainbow};
 
 /// Help text is built once at startup; every `GET /` serves the same bytes.
 static HELP: LazyLock<String> = LazyLock::new(build_help_text);
@@ -151,38 +151,62 @@ fn static_response(cfg: &RenderConfig) -> Response {
 fn animated_response(cfg: &RenderConfig) -> Result<Response, RenderError> {
     let cells = render_cells(cfg)?;
     let rows = sgr::row_count(&cells);
-    let mode = cfg.mode.unwrap_or(Mode::Solid);
-    let fps = cfg.fps;
-    let timeout = cfg.timeout;
-
-    let stream = build_stream(cells, rows, mode, fps, timeout);
-    let body = Body::from_stream(stream);
+    let shader = Shader::for_mode(cfg.mode.unwrap_or(Mode::Solid), rows);
+    let stream = build_stream(cells, rows, shader, cfg.fps, cfg.timeout);
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .header(header::CACHE_CONTROL, "no-cache")
         .header("X-Content-Type-Options", "nosniff")
-        .body(body)
+        .body(Body::from_stream(stream))
         .expect("valid response"))
 }
 
-/// Build the frame stream. Each yielded chunk is a full frame (cursor-up
-/// prelude + shaded cells). Stream ends after `timeout` seconds or when
-/// the consumer drops it (client disconnect).
+/// Static dispatch over the three concrete filters so the per-cell
+/// `shade` call in the hot path stays devirtualized.
+enum Shader {
+    Rainbow,
+    Fire(Fire),
+    Identity,
+}
+
+impl Shader {
+    fn for_mode(mode: Mode, rows: u16) -> Self {
+        match mode {
+            Mode::Rainbow => Self::Rainbow,
+            Mode::Fire => Self::Fire(Fire { rows }),
+            Mode::Solid => Self::Identity,
+        }
+    }
+}
+
+impl Filter for Shader {
+    fn shade(&self, cell: &Cell, frame: u64) -> Option<sgr::Rgb> {
+        match self {
+            Self::Rainbow => Rainbow.shade(cell, frame),
+            Self::Fire(f) => f.shade(cell, frame),
+            Self::Identity => Identity.shade(cell, frame),
+        }
+    }
+}
+
 fn build_stream(
     cells: Vec<Cell>,
     rows: u16,
-    mode: Mode,
+    shader: Shader,
     fps: u32,
     timeout: u32,
 ) -> impl futures_core::Stream<Item = Result<String, Infallible>> {
     stream! {
-        // First chunk: hide cursor, write the initial frame in-place.
-        let first = format!("\x1b[?25l{}", shade(&cells, mode, rows, 0));
+        let first = format!(
+            "{}{}{}{}",
+            ansi::HIDE_CURSOR, ansi::CLEAR_SCREEN, ansi::CURSOR_HOME,
+            emit_shaded(&cells, &shader, 0),
+        );
         yield Ok(first);
 
-        // 0-row guard — shouldn't happen, but \x1b[0A is invalid.
+        // \x1b[0A is invalid; skip cursor-up if the banner had no rows.
         let up = if rows > 0 {
             format!("\x1b[{rows}A\r")
         } else {
@@ -192,7 +216,6 @@ fn build_stream(
         let tick = Duration::from_millis((1000 / fps.max(1)) as u64);
         let mut iv = tokio::time::interval(tick);
         iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        // Consume the immediate first tick so the next frame waits one interval.
         iv.tick().await;
 
         let deadline = tokio::time::sleep(Duration::from_secs(timeout as u64));
@@ -203,23 +226,13 @@ fn build_stream(
             tokio::select! {
                 _ = &mut deadline => break,
                 _ = iv.tick() => {
-                    let chunk = format!("{up}{}", shade(&cells, mode, rows, frame));
-                    yield Ok(chunk);
+                    yield Ok(format!("{up}{}", emit_shaded(&cells, &shader, frame)));
                     frame += 1;
                 }
             }
         }
 
-        // Final chunk: reset SGR, show cursor, trailing newline.
-        yield Ok(String::from("\x1b[0m\x1b[?25h\n"));
-    }
-}
-
-fn shade(cells: &[Cell], mode: Mode, rows: u16, frame: u64) -> String {
-    match mode {
-        Mode::Rainbow => emit_shaded(cells, &Rainbow, frame),
-        Mode::Fire => emit_shaded(cells, &Fire { rows }, frame),
-        Mode::Solid => emit_shaded(cells, &Identity, frame),
+        yield Ok(format!("{}{}\n", ansi::SGR_RESET, ansi::SHOW_CURSOR));
     }
 }
 

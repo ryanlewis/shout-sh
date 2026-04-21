@@ -109,16 +109,9 @@ pub fn render_cells(cfg: &RenderConfig) -> Result<Vec<Cell>, RenderError> {
 
 /// Apply a filter to a cell grid at frame N and emit the ANSI bytes.
 pub fn emit_shaded<F: Filter>(cells: &[Cell], filter: &F, frame: u64) -> String {
-    let shaded: Vec<Cell> = cells
-        .iter()
-        .map(|c| Cell {
-            ch: c.ch,
-            row: c.row,
-            col: c.col,
-            rgb: filter.shade(c, frame),
-        })
-        .collect();
-    sgr::emit(&shaded)
+    let mut out = String::with_capacity(cells.len() * 4);
+    sgr::emit_with(cells, |c| filter.shade(c, frame), &mut out);
+    out
 }
 
 pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {

@@ -20,6 +20,15 @@ use std::fmt::Write as _;
 
 pub type Rgb = (u8, u8, u8);
 
+pub mod ansi {
+    pub const HIDE_CURSOR: &str = "\x1b[?25l";
+    pub const SHOW_CURSOR: &str = "\x1b[?25h";
+    pub const CLEAR_SCREEN: &str = "\x1b[2J";
+    pub const CURSOR_HOME: &str = "\x1b[H";
+    pub const SGR_RESET: &str = "\x1b[0m";
+    pub const FG_DEFAULT: &str = "\x1b[39m";
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     pub ch: char,
@@ -157,35 +166,38 @@ pub fn row_count(cells: &[Cell]) -> u16 {
     cells.last().map(|c| c.row + 1).unwrap_or(0)
 }
 
-/// Emit a frame as bytes: `\n`-separated rows, coalesced SGR runs, bare
-/// chars passed through verbatim. Does not emit any cursor-control codes
-/// (the caller owns that).
-pub fn emit(cells: &[Cell]) -> String {
+/// Emit a frame into `out`: `\n`-separated rows, coalesced SGR runs, bare
+/// chars passed through. `color_of` supplies the RGB for each cell — use
+/// `|c| c.rgb` for a faithful re-emit, or a shader closure to recolor
+/// per-frame without allocating an intermediate cell grid.
+pub fn emit_with<F>(cells: &[Cell], color_of: F, out: &mut String)
+where
+    F: Fn(&Cell) -> Option<Rgb>,
+{
     if cells.is_empty() {
-        return String::new();
+        return;
     }
     let rows = row_count(cells);
-    let mut out = String::with_capacity(cells.len() * 4);
     let mut idx = 0;
     for row in 0..rows {
         let mut open: Option<Rgb> = None;
-        // Find cells for this row. Cells are already row-sorted.
         while idx < cells.len() && cells[idx].row == row {
             let cell = &cells[idx];
-            match (open, cell.rgb) {
+            let rgb = color_of(cell);
+            match (open, rgb) {
                 (Some(o), Some(c)) if o == c => {
                     out.push(cell.ch);
                 }
                 (_, Some(c)) => {
                     if open.is_some() {
-                        out.push_str("\x1b[39m");
+                        out.push_str(ansi::FG_DEFAULT);
                     }
                     let _ = write!(out, "\x1b[38;2;{};{};{}m", c.0, c.1, c.2);
                     out.push(cell.ch);
                     open = Some(c);
                 }
                 (Some(_), None) => {
-                    out.push_str("\x1b[39m");
+                    out.push_str(ansi::FG_DEFAULT);
                     open = None;
                     out.push(cell.ch);
                 }
@@ -196,12 +208,17 @@ pub fn emit(cells: &[Cell]) -> String {
             idx += 1;
         }
         if open.is_some() {
-            out.push_str("\x1b[39m");
+            out.push_str(ansi::FG_DEFAULT);
         }
         if row + 1 < rows {
             out.push('\n');
         }
     }
+}
+
+pub fn emit(cells: &[Cell]) -> String {
+    let mut out = String::with_capacity(cells.len() * 4);
+    emit_with(cells, |c| c.rgb, &mut out);
     out
 }
 
