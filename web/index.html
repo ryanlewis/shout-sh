@@ -10,8 +10,7 @@
 		<div id="app">
 			<div class="container">
 				<header class="masthead">
-					<span class="wordmark">shout.sh</span>
-					<span class="tick">PLAYGROUND</span>
+					<pre id="masthead-art" class="masthead__art" aria-label="shout.sh"></pre>
 				</header>
 
 				<section class="playground">
@@ -28,7 +27,6 @@
 							maxlength="40"
 							aria-label="banner text"
 						/>
-						<span class="caret" aria-hidden="true"></span>
 					</div>
 
 					<div class="controls">
@@ -42,17 +40,26 @@
 							></div>
 						</div>
 						<div class="opt">
+							<span class="opt__label">PALETTE</span>
+							<div
+								id="preset-picker"
+								class="chips"
+								role="radiogroup"
+								aria-label="palette"
+							></div>
+						</div>
+						<div class="opt">
 							<span class="opt__label">MODE</span>
 							<div id="mode-picker" class="chips" role="radiogroup" aria-label="mode">
-								<button type="button" role="radio" data-mode="solid">solid</button>
 								<button
 									type="button"
 									role="radio"
-									data-mode="rainbow"
+									data-mode="solid"
 									aria-checked="true"
 								>
-									rainbow
+									solid
 								</button>
+								<button type="button" role="radio" data-mode="rainbow">rainbow</button>
 								<button type="button" role="radio" data-mode="fire">fire</button>
 							</div>
 						</div>

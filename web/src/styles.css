@@ -40,20 +40,19 @@ body {
 }
 
 .masthead {
-	display: flex;
-	align-items: baseline;
-	gap: 16px;
+	display: block;
 	padding-bottom: 16px;
 	border-bottom: 1px dashed var(--rule);
 }
-.wordmark {
-	font-weight: 700;
-	font-size: 20px;
-}
-.tick {
-	color: var(--fg-2);
-	font-size: 11px;
-	letter-spacing: 0.12em;
+.masthead__art {
+	font-family: var(--font-ascii);
+	font-size: 12px;
+	line-height: 1;
+	letter-spacing: 0;
+	white-space: pre;
+	margin: 0;
+	color: var(--fg);
+	overflow-x: auto;
 }
 
 .playground {
@@ -61,6 +60,7 @@ body {
 }
 
 .prompt-line {
+	position: relative;
 	display: flex;
 	align-items: baseline;
 	gap: 8px;
@@ -81,23 +81,27 @@ body {
 	font-family: var(--font-mono);
 	font-size: 28px;
 	font-weight: 500;
-	caret-color: var(--fg);
+	caret-color: transparent;
 }
 .text-in::placeholder {
 	color: var(--fg-3);
 }
 
-.caret {
-	display: inline-block;
-	width: 0.55ch;
-	height: 1em;
+.block-caret {
+	position: absolute;
+	pointer-events: none;
+	width: 0.6ch;
 	background: var(--fg);
+	opacity: 0;
+	font-size: 28px;
+	line-height: 1;
+}
+.block-caret.on {
 	animation: blink var(--blink) steps(1, end) infinite;
 }
 @keyframes blink {
-	50% {
-		opacity: 0;
-	}
+	0%, 49% { opacity: 1; }
+	50%, 100% { opacity: 0; }
 }
 
 .controls {
@@ -144,6 +148,15 @@ body {
 .chips button:focus-visible {
 	outline: 1px dashed var(--fg);
 	outline-offset: -3px;
+}
+.chips--disabled {
+	opacity: 0.35;
+}
+.chips--disabled button {
+	cursor: not-allowed;
+}
+.chips--disabled button:hover {
+	color: var(--fg-1);
 }
 
 #once-cb {
