@@ -28,7 +28,7 @@ async fn main() {
         }
     };
     eprintln!("shout.sh listening on {addr}");
-    if let Err(e) = axum::serve(listener, shout::app()).await {
+    if let Err(e) = axum::serve(listener, shout_server::app()).await {
         eprintln!("serve error: {e}");
         std::process::exit(1);
     }

@@ -22,9 +22,15 @@ go.work.sum
 
 # Build output
 /shout
-shout-*
 dist/
 build/
+
+# wasm + web build artifacts
+/shout-wasm/pkg/
+/shout-wasm/target/
+/web/src/wasm-pkg/
+/web/dist/
+/web/node_modules/
 
 # IDE specific files
 .idea/

@@ -11,11 +11,14 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
+//! Pure rendering pipeline shared by the server and the wasm playground.
+//! Zero async / HTTP / tokio deps — depends only on `cfonts`.
+
 pub mod fonts;
 pub mod parser;
 pub mod render;
-mod server;
 pub mod sgr;
 pub mod shader;
 
-pub use server::{app, help_text};
+pub use parser::{Mode, RenderConfig, parse};
+pub use render::{RenderError, banner, emit_shaded, render_cells, render_config};

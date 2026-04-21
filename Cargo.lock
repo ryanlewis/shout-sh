@@ -507,16 +507,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "shout"
+name = "shout-core"
+version = "0.1.0"
+dependencies = [
+ "cfonts",
+]
+
+[[package]]
+name = "shout-server"
 version = "0.1.0"
 dependencies = [
  "async-stream",
  "axum",
- "cfonts",
  "futures-core",
  "http-body-util",
- "serde",
  "serde_json",
+ "shout-core",
  "tokio",
  "tower",
 ]

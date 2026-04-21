@@ -18,11 +18,11 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use crate::fonts;
-use crate::parser::{Mode, RenderConfig, parse};
-use crate::render::{RenderError, banner, emit_shaded, render_cells, render_config};
-use crate::sgr::{self, Cell, ansi};
-use crate::shader::{Filter, Fire, Identity, Rainbow};
+use shout_core::fonts;
+use shout_core::parser::{Mode, RenderConfig, parse};
+use shout_core::render::{RenderError, banner, emit_shaded, render_cells, render_config};
+use shout_core::sgr::{self, Cell, ansi};
+use shout_core::shader::{Filter, Fire, Identity, Rainbow};
 
 /// Help text is built once at startup; every `GET /` serves the same bytes.
 static HELP: LazyLock<String> = LazyLock::new(build_help_text);

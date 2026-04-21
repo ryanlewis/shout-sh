@@ -1,0 +1,9 @@
+[package]
+name = "shout-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure render pipeline (cfonts + SGR + shaders + emitters) for shout.sh. No async, no HTTP."
+
+[dependencies]
+cfonts = { workspace = true }

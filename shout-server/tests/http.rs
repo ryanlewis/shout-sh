@@ -15,7 +15,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use tower::ServiceExt;
 
-use shout::app;
+use shout_server::app;
 
 async fn get(uri: &str) -> (StatusCode, String, String) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();

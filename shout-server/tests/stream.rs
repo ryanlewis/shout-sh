@@ -14,7 +14,7 @@ use http_body_util::BodyExt;
 use tokio::time::timeout;
 use tower::ServiceExt;
 
-use shout::app;
+use shout_server::app;
 
 async fn stream_request(uri: &str) -> axum::response::Response {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();

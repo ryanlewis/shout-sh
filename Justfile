@@ -2,17 +2,17 @@ default:
     @just --list
 
 run:
-    cargo run
+    cargo run -p shout-server
 
 test:
-    cargo test
+    cargo test --all
 
 lint:
-    cargo fmt --check
+    cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
 
 fmt:
-    cargo fmt
+    cargo fmt --all
 
 ci: lint test
-    cargo build --release
+    cargo build --release -p shout-server
