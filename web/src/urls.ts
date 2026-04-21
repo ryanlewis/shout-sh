@@ -16,7 +16,12 @@ export function buildPath(state: UrlState): string {
 	const directives: string[] = [];
 	if (state.font && state.font !== DEFAULT_FONT) directives.push(state.font);
 	if (state.mode !== 'solid') directives.push(state.mode);
-	if (state.color) directives.push(state.color);
+	// Preset and bare color only make sense when the effect is solid/none.
+	// Rainbow/fire override them at render time, so don't pollute the URL.
+	if (state.mode === 'solid') {
+		if (state.preset) directives.push(state.preset);
+		else if (state.color) directives.push(state.color);
+	}
 	if (state.once) directives.push('once');
 
 	const text = encodeURIComponent(state.text || '').replace(/%20/g, '+');

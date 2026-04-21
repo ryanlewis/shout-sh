@@ -12,6 +12,7 @@
 // GNU General Public License for more details.
 
 use crate::fonts::is_font;
+use crate::presets::is_preset;
 use crate::render::is_color;
 
 pub const MAX_TEXT_LEN: usize = 200;
@@ -45,6 +46,7 @@ pub struct RenderConfig {
     pub font: String,
     pub mode: Option<Mode>,
     pub color: String,
+    pub preset: String,
     pub json: bool,
     pub animate: bool,
     pub once: bool,
@@ -59,6 +61,7 @@ impl Default for RenderConfig {
             font: DEFAULT_FONT.to_string(),
             mode: None,
             color: String::new(),
+            preset: String::new(),
             json: false,
             animate: false,
             once: false,
@@ -124,6 +127,9 @@ fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
         } else if let Some(m) = Mode::from_token(&tok) {
             cfg.mode = Some(m);
             matched = true;
+        } else if is_preset(&tok) {
+            cfg.preset = tok;
+            matched = true;
         } else if is_color(&tok) {
             cfg.color = tok;
             matched = true;
@@ -170,6 +176,7 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
             "font" => cfg.font = v,
             "mode" => cfg.mode = Mode::from_token(&v).or(cfg.mode),
             "color" => cfg.color = v,
+            "preset" => cfg.preset = v,
             "format" => cfg.json = v == "json",
             "fps" => {
                 if let Ok(n) = v.parse::<u32>() {
@@ -493,5 +500,35 @@ mod tests {
     #[test]
     fn animate_overrides_default() {
         assert!(parse("/solid+animate/Hi", None).should_animate());
+    }
+
+    #[test]
+    fn preset_directive() {
+        assert_eq!(
+            parse("/sunset/Hi", None),
+            RenderConfig {
+                preset: "sunset".into(),
+                text: "Hi".into(),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn preset_and_bare_color_last_wins() {
+        // Grammar-level: classifier assigns both, render_config prefers preset.
+        let cfg = parse("/sunset+red/Hi", None);
+        assert_eq!(cfg.preset, "sunset");
+        assert_eq!(cfg.color, "red");
+    }
+
+    #[test]
+    fn preset_via_query() {
+        assert_eq!(parse("/Hi", Some("preset=neon")).preset, "neon");
+    }
+
+    #[test]
+    fn preset_does_not_animate_by_default() {
+        assert!(!parse("/sunset/Hi", None).should_animate());
     }
 }

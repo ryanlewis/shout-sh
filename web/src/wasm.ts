@@ -14,6 +14,7 @@ export interface PlaygroundCfg {
 	font: string;
 	mode: 'solid' | 'rainbow' | 'fire';
 	color: string;
+	preset: string;
 }
 
 export async function loadWasm(wasmUrl: string): Promise<Wasm> {

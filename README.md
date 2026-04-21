@@ -52,6 +52,24 @@ $ curl shout.sh/cyanbright/ok
 available: `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `white`,
 `gray`, and a `*bright` variant of each.
 
+### presets
+
+curated multi-color palettes for fonts that support more than one color
+layer (`block`, `chrome`, `3d`, etc. use two; `chrome` uses three). on
+single-color fonts like `tiny` the first stop is used and the rest are
+silently dropped, so the same preset name "just works" everywhere.
+
+```
+$ curl shout.sh/sunset/hi        # two-tone on block
+$ curl shout.sh/ocean/3d/Hello   # preset + font
+$ curl shout.sh/presets          # list presets
+$ curl shout.sh/presets/sunset   # preview one
+```
+
+available: `sunset`, `ocean`, `mint`, `candy`, `matrix`, `mono`, `neon`,
+`ember`. presets imply solid mode — combining one with `rainbow` or `fire`
+lets the animated mode win.
+
 ### modes
 
 ```
@@ -88,8 +106,8 @@ $ curl 'shout.sh/hi?font=tiny&mode=fire&once'
 $ curl 'shout.sh/HELLO?format=json'
 ```
 
-supported: `font`, `mode`, `color`, `format`, `animate`, `once`, `fps`,
-`timeout`. query params override path directives.
+supported: `font`, `mode`, `color`, `preset`, `format`, `animate`, `once`,
+`fps`, `timeout`. query params override path directives.
 
 `format=json` always returns a single static frame — json and animation
 don't mix.
@@ -103,6 +121,8 @@ don't mix.
 | `/{dir}/{text}` | render with config   |
 | `/fonts`        | list fonts           |
 | `/fonts/{name}` | preview a font       |
+| `/presets`      | list presets         |
+| `/presets/{name}` | preview a preset   |
 | `/health`       | health check         |
 
 ## playground

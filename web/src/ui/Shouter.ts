@@ -14,6 +14,7 @@ export interface ShouterOpts {
 export interface ShouterHandle {
 	setFont(font: FontName): void;
 	setMode(mode: Mode): void;
+	setPreset(preset: string): void;
 	setOnce(once: boolean): void;
 	setFps(fps: number): void;
 	state(): UrlState;
@@ -44,6 +45,10 @@ export function mountShouter(opts: ShouterOpts): ShouterHandle {
 		},
 		setMode(mode) {
 			state = { ...state, mode };
+			flush();
+		},
+		setPreset(preset) {
+			state = { ...state, preset };
 			flush();
 		},
 		setOnce(once) {

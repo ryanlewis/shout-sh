@@ -17,6 +17,7 @@
 pub mod emit_html;
 pub mod fonts;
 pub mod parser;
+pub mod presets;
 pub mod render;
 pub mod sgr;
 pub mod shader;

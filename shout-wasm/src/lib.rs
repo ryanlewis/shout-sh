@@ -28,6 +28,7 @@ struct JsCfg {
     font: String,
     mode: Option<String>,
     color: String,
+    preset: String,
 }
 
 fn cfg_from_json(s: &str) -> Result<RenderConfig, String> {
@@ -49,6 +50,7 @@ fn cfg_from_json(s: &str) -> Result<RenderConfig, String> {
         font,
         mode,
         color: raw.color,
+        preset: raw.preset,
         ..Default::default()
     })
 }
@@ -198,5 +200,12 @@ mod tests {
         let cfg = r#"{"text":"HI"}"#;
         let out = render_once_inner(cfg).unwrap();
         assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn preset_renders_truecolor_spans() {
+        let cfg = r#"{"text":"HI","font":"block","preset":"sunset"}"#;
+        let out = render_once_inner(cfg).unwrap();
+        assert!(out.contains("color:#"), "no colored spans: {out}");
     }
 }

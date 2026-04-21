@@ -8,8 +8,9 @@
 
 use cfonts::{Colors, Options, render};
 
-use crate::fonts::resolve;
+use crate::fonts::{self, resolve};
 use crate::parser::{Mode, RenderConfig};
+use crate::presets;
 use crate::sgr::{self, Cell};
 use crate::shader::{Filter, Rainbow};
 
@@ -17,6 +18,7 @@ use crate::shader::{Filter, Rainbow};
 pub enum RenderError {
     UnknownFont,
     UnknownColor,
+    UnknownPreset,
     EmptyText,
 }
 
@@ -27,6 +29,7 @@ impl RenderError {
             Self::UnknownColor => {
                 "color not found. try `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `white`, `gray`, or a `*bright` variant."
             }
+            Self::UnknownPreset => "preset not found. try `curl shout.sh/presets`.",
             Self::EmptyText => "nothing to shout about. type something.",
         }
     }
@@ -57,6 +60,23 @@ pub fn is_color(name: &str) -> bool {
     color_enum(name).is_some()
 }
 
+/// Map a preset onto cfonts' gradient path, clipped to the font's color count.
+/// Presets with more stops than the font consumes are silently truncated;
+/// a single-stop preset is duplicated so transition_gradient has a pair to
+/// interpolate between (cfonts panics on a 1-wide gradient in linear mode).
+fn apply_preset(font_name: &str, preset_name: &str, opts: &mut Options) -> Result<(), RenderError> {
+    let preset = presets::resolve(preset_name).ok_or(RenderError::UnknownPreset)?;
+    let take = fonts::color_count(font_name).min(preset.stops.len());
+    let mut stops: Vec<String> = preset.stops[..take].iter().map(|s| (*s).into()).collect();
+    if stops.len() < 2 {
+        // transition_gradient expects at least 2 anchors; duplicate for 1-color fonts.
+        stops.push(stops[0].clone());
+    }
+    opts.gradient = stops;
+    opts.transition_gradient = true;
+    Ok(())
+}
+
 /// Raw cfonts render as String. For Rainbow mode, renders with a neutral
 /// white base so the shader pipeline can recolor every non-space glyph.
 fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
@@ -74,17 +94,23 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
 
     match cfg.mode {
         None => {
-            if !cfg.color.is_empty() {
+            if !cfg.preset.is_empty() {
+                apply_preset(&cfg.font, &cfg.preset, &mut opts)?;
+            } else if !cfg.color.is_empty() {
                 opts.colors = vec![color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?];
             }
         }
         Some(Mode::Solid) => {
-            let name = if cfg.color.is_empty() {
-                "white"
+            if !cfg.preset.is_empty() {
+                apply_preset(&cfg.font, &cfg.preset, &mut opts)?;
             } else {
-                cfg.color.as_str()
-            };
-            opts.colors = vec![color_enum(name).ok_or(RenderError::UnknownColor)?];
+                let name = if cfg.color.is_empty() {
+                    "white"
+                } else {
+                    cfg.color.as_str()
+                };
+                opts.colors = vec![color_enum(name).ok_or(RenderError::UnknownColor)?];
+            }
         }
         Some(Mode::Rainbow) => {
             // Neutral base; the Rainbow shader recolors per-frame (frame 0
@@ -211,6 +237,52 @@ mod tests {
         assert!(is_color("red"));
         assert!(is_color("cyanbright"));
         assert!(!is_color("puce"));
+    }
+
+    #[test]
+    fn preset_emits_truecolor() {
+        let cfg = RenderConfig {
+            preset: "sunset".into(),
+            ..base("hi")
+        };
+        assert!(render_config(&cfg).unwrap().contains("\x1b[38;2;"));
+    }
+
+    #[test]
+    fn preset_on_single_color_font_ok() {
+        // tiny is a 1-color font; preset is 2-stop. Should render without panic.
+        let cfg = RenderConfig {
+            font: "tiny".into(),
+            preset: "neon".into(),
+            ..base("hi")
+        };
+        assert!(render_config(&cfg).unwrap().contains("\x1b[38;2;"));
+    }
+
+    #[test]
+    fn unknown_preset_rejected() {
+        let cfg = RenderConfig {
+            preset: "puce".into(),
+            ..base("hi")
+        };
+        assert_eq!(render_config(&cfg), Err(RenderError::UnknownPreset));
+    }
+
+    #[test]
+    fn preset_wins_over_bare_color() {
+        // Both set via path classifier; preset should drive the render.
+        let cfg = RenderConfig {
+            preset: "ocean".into(),
+            color: "red".into(),
+            ..base("hi")
+        };
+        // If bare color won we'd see `\x1b[31m`, not truecolor.
+        let out = render_config(&cfg).unwrap();
+        assert!(
+            out.contains("\x1b[38;2;"),
+            "expected truecolor (preset), got: {out}"
+        );
+        assert!(!out.contains("\x1b[31m"));
     }
 
     #[test]

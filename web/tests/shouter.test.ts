@@ -6,6 +6,7 @@ const initial: Omit<UrlState, 'text'> = {
 	font: 'block',
 	mode: 'rainbow',
 	color: '',
+	preset: '',
 	once: false,
 	fps: 10,
 };
@@ -72,5 +73,8 @@ describe('Shouter', () => {
 
 		s.setFps(20);
 		expect(onChange.mock.calls[3]?.[0].fps).toBe(20);
+
+		s.setPreset('sunset');
+		expect(onChange.mock.calls[4]?.[0].preset).toBe('sunset');
 	});
 });

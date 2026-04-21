@@ -20,6 +20,7 @@ use axum::routing::get;
 
 use shout_core::fonts;
 use shout_core::parser::{Mode, RenderConfig, parse};
+use shout_core::presets;
 use shout_core::render::{RenderError, banner, emit_shaded, render_cells, render_config};
 use shout_core::sgr::{self, Cell, ansi};
 use shout_core::shader::{Filter, Fire, Identity, Rainbow};
@@ -30,6 +31,8 @@ static HELP: LazyLock<String> = LazyLock::new(build_help_text);
 /// `/fonts` body: the canonical font list with a trailing newline.
 static FONTS_BODY: LazyLock<String> = LazyLock::new(|| format!("{}\n", fonts::list_newline()));
 
+static PRESETS_BODY: LazyLock<String> = LazyLock::new(|| format!("{}\n", presets::list_newline()));
+
 pub fn app() -> Router {
     Router::new()
         .route("/", get(root))
@@ -37,6 +40,8 @@ pub fn app() -> Router {
         .route("/favicon.ico", get(favicon))
         .route("/fonts", get(fonts_list))
         .route("/fonts/{name}", get(font_preview))
+        .route("/presets", get(presets_list))
+        .route("/presets/{name}", get(preset_preview))
         .route("/_app/{file}", get(app_asset))
         .fallback(render_fallback)
 }
@@ -131,9 +136,27 @@ async fn font_preview(Path(name): Path<String>) -> Response {
     if !fonts::is_font(&lower) {
         return error_response(RenderError::UnknownFont);
     }
+    // Preview with `sunset` so multi-color fonts show off their layers.
     let cfg = RenderConfig {
         text: "Hello World".into(),
         font: lower,
+        preset: "sunset".into(),
+        ..Default::default()
+    };
+    match render_config(&cfg) {
+        Ok(out) => plain(out),
+        Err(e) => error_response(e),
+    }
+}
+
+async fn presets_list() -> Response {
+    plain(PRESETS_BODY.as_str())
+}
+
+async fn preset_preview(Path(name): Path<String>) -> Response {
+    let cfg = RenderConfig {
+        text: "Hello World".into(),
+        preset: name.to_lowercase(),
         ..Default::default()
     };
     match render_config(&cfg) {
@@ -322,8 +345,20 @@ fn build_help_text() -> String {
     s.push_str("COLORS\n");
     s.push_str("  red, green, blue, yellow, cyan, magenta, white, gray\n");
     s.push_str("  `*bright` variants, e.g. `redbright`, `cyanbright`.\n\n");
+    s.push_str("PRESETS\n");
+    s.push_str("  curated two-color palettes. multi-color fonts use both layers;\n");
+    s.push_str("  single-color fonts keep just the first.\n  ");
+    for (i, p) in presets::PRESETS.iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        s.push_str(p.name);
+    }
+    s.push_str("\n\n");
     s.push_str("MORE\n");
-    s.push_str("  $ curl shout.sh/fonts          # list fonts\n");
-    s.push_str("  $ curl shout.sh/fonts/block    # preview one\n");
+    s.push_str("  $ curl shout.sh/fonts            # list fonts\n");
+    s.push_str("  $ curl shout.sh/fonts/block      # preview one\n");
+    s.push_str("  $ curl shout.sh/presets          # list presets\n");
+    s.push_str("  $ curl shout.sh/presets/sunset   # preview one\n");
     s
 }

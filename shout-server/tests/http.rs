@@ -79,6 +79,36 @@ async fn font_preview_unknown_400() {
 }
 
 #[tokio::test]
+async fn presets_lists_all() {
+    let (status, _, body) = get("/presets").await;
+    assert_eq!(status, StatusCode::OK);
+    let lines: Vec<_> = body.lines().filter(|l| !l.is_empty()).collect();
+    assert!(lines.contains(&"sunset"));
+    assert!(lines.contains(&"ocean"));
+}
+
+#[tokio::test]
+async fn preset_preview_renders() {
+    let (status, _, body) = get("/presets/sunset").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("\x1b[38;2;"));
+}
+
+#[tokio::test]
+async fn preset_preview_unknown_400() {
+    let (status, _, body) = get("/presets/puce").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("preset not found"));
+}
+
+#[tokio::test]
+async fn preset_directive_renders_truecolor() {
+    let (status, _, body) = get("/sunset/hi").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("\x1b[38;2;"));
+}
+
+#[tokio::test]
 async fn single_segment_renders_text() {
     let (status, _, body) = get("/HELLO").await;
     assert_eq!(status, StatusCode::OK);

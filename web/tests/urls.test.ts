@@ -6,6 +6,7 @@ const base: UrlState = {
 	font: 'block',
 	mode: 'solid',
 	color: '',
+	preset: '',
 	once: false,
 	fps: 10,
 };
@@ -45,6 +46,19 @@ describe('buildPath', () => {
 
 	it('solid mode alone produces no directive segment', () => {
 		expect(buildPath({ ...base, text: 'hi', mode: 'solid' })).toBe('/hi');
+	});
+
+	it('preset becomes a directive in solid mode', () => {
+		expect(buildPath({ ...base, preset: 'sunset' })).toBe('/sunset/HELLO');
+	});
+
+	it('preset is suppressed when mode is rainbow', () => {
+		// Rainbow overrides preset at render time; keep URL clean.
+		expect(buildPath({ ...base, preset: 'sunset', mode: 'rainbow' })).toBe('/rainbow/HELLO');
+	});
+
+	it('preset wins over bare color in the URL', () => {
+		expect(buildPath({ ...base, preset: 'ocean', color: 'red' })).toBe('/ocean/HELLO');
 	});
 });
 

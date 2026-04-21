@@ -23,7 +23,13 @@ function makeRaf() {
 	return { raf, caf, tick, pending: () => cbs.length };
 }
 
-const cfg: PlaygroundCfg = { text: 'HI', font: 'block', mode: 'rainbow', color: '' };
+const cfg: PlaygroundCfg = {
+	text: 'HI',
+	font: 'block',
+	mode: 'rainbow',
+	color: '',
+	preset: '',
+};
 
 describe('Preview', () => {
 	it('once mode renders a single frame and does not loop', () => {
