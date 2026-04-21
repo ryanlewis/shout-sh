@@ -11,9 +11,18 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
+use percent_encoding::percent_decode_str;
+
 use crate::fonts::is_font;
 use crate::presets::is_preset;
 use crate::render::is_color;
+
+/// Percent-decode a URL segment as UTF-8, falling back to the raw input on
+/// invalid sequences. We decode text payloads (not the directive structure)
+/// so `%7C` → `|`, `%20` → space, etc. reach cfonts as intended.
+fn decode(s: &str) -> String {
+    percent_decode_str(s).decode_utf8_lossy().into_owned()
+}
 
 pub const MAX_TEXT_LEN: usize = 200;
 pub const DEFAULT_FONT: &str = "block";
@@ -126,15 +135,15 @@ pub fn parse(path: &str, query: Option<&str>) -> RenderConfig {
 
 fn parse_path(raw: &str, cfg: &mut RenderConfig) {
     let Some(slash) = raw.find('/') else {
-        cfg.text = raw.replace('+', " ");
+        cfg.text = decode(&raw.replace('+', " "));
         return;
     };
     let first = &raw[..slash];
     let rest = &raw[slash + 1..];
     if parse_directives(first, cfg) {
-        cfg.text = rest.replace('+', " ");
+        cfg.text = decode(&rest.replace('+', " "));
     } else {
-        cfg.text = raw.replace('+', " ");
+        cfg.text = decode(&raw.replace('+', " "));
     }
 }
 
@@ -575,6 +584,23 @@ mod tests {
     #[test]
     fn preset_via_query() {
         assert_eq!(parse("/Hi", Some("preset=neon")).preset, "neon");
+    }
+
+    #[test]
+    fn percent_encoded_pipe_decodes_to_newline_bar() {
+        // `|` is cfonts' line-break directive. Accept `%7C` as equivalent so
+        // shells that can't send a literal `|` still get multi-line output.
+        assert_eq!(parse("/HELLO%7Cthere", None).text, "HELLO|there");
+    }
+
+    #[test]
+    fn percent_encoded_space_decodes() {
+        assert_eq!(parse("/Hello%20World", None).text, "Hello World");
+    }
+
+    #[test]
+    fn percent_encoded_in_text_after_directive() {
+        assert_eq!(parse("/tiny/HI%7Cthere", None).text, "HI|there");
     }
 
     #[test]

@@ -7,3 +7,4 @@ description = "Pure render pipeline (cfonts + SGR + shaders + emitters) for shou
 
 [dependencies]
 cfonts = { workspace = true }
+percent-encoding = "2"

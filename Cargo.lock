@@ -535,6 +535,7 @@ name = "shout-core"
 version = "0.1.0"
 dependencies = [
  "cfonts",
+ "percent-encoding",
 ]
 
 [[package]]
