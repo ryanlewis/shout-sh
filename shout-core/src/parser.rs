@@ -31,6 +31,25 @@ pub const MAX_FPS: u32 = 30;
 pub const DEFAULT_TIMEOUT: u32 = 60;
 pub const MAX_TIMEOUT: u32 = 300;
 
+/// Hard cap on path + query combined. The fallback handler rejects anything
+/// larger with 414 so we never alloc / decode multi-KB user input.
+pub const MAX_URL_LEN: usize = 512;
+/// Cap on `{name}` path params on `/fonts/{name}` and `/presets/{name}`.
+pub const MAX_PARAM_LEN: usize = 64;
+/// Max `+`-separated tokens we'll classify in a directive segment.
+pub const MAX_DIRECTIVE_TOKENS: usize = 16;
+/// Max characters in a single directive token (pre-lowercase). Anything
+/// longer can't be a real directive so we skip it without allocating.
+pub const MAX_TOKEN_LEN: usize = 32;
+/// Max `&`-separated pairs we'll honor in a query string.
+pub const MAX_QUERY_PAIRS: usize = 32;
+/// Max characters in a single query value.
+pub const MAX_QUERY_VALUE_LEN: usize = 64;
+/// Max `|` line-break characters in the text payload. cfonts turns each `|`
+/// into an extra banner row, so without a cap a 200-char text could produce
+/// hundreds of glyph rows.
+pub const MAX_LINE_BREAKS: usize = 8;
+
 pub const DEFAULT_LETTER_SPACING: u16 = 1;
 pub const MAX_LETTER_SPACING: u16 = 10;
 /// Blank rows above and below the banner. Replaces cfonts' hardcoded
@@ -123,14 +142,64 @@ const LAYOUTS: &[&str] = &["full", "kern", "smush"];
 pub fn parse(path: &str, query: Option<&str>) -> RenderConfig {
     let mut cfg = RenderConfig::default();
     let raw = path.strip_prefix('/').unwrap_or(path);
-    parse_path(raw, &mut cfg);
+    // Belt-and-braces: the server layer rejects oversize URLs with 414, but
+    // other callers (wasm, tests) hit `parse` directly. Truncate the raw
+    // path so nothing downstream has to cope with megabytes of input.
+    let raw = truncate_chars(raw, MAX_URL_LEN);
+    parse_path(&raw, &mut cfg);
     if let Some(q) = query {
-        apply_query(q, &mut cfg);
+        let q = truncate_chars(q, MAX_URL_LEN);
+        apply_query(&q, &mut cfg);
     }
+    cfg.text = sanitize_text(&cfg.text);
     if cfg.text.chars().count() > MAX_TEXT_LEN {
         cfg.text = cfg.text.chars().take(MAX_TEXT_LEN).collect();
     }
     cfg
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    s.chars().take(max).collect()
+}
+
+/// Drop ASCII control characters (incl. ESC) and unicode bidi-override
+/// formatting chars before handing text to cfonts. Without this a caller
+/// could embed `%1B[...` to smuggle terminal escape sequences, or bidi
+/// overrides (U+202A..202E, U+2066..2069) to visually reorder characters
+/// in a way that disguises the rendered banner when shared elsewhere.
+fn sanitize_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut breaks = 0usize;
+    for c in s.chars() {
+        if c == '|' {
+            if breaks >= MAX_LINE_BREAKS {
+                continue;
+            }
+            breaks += 1;
+            out.push(c);
+            continue;
+        }
+        if c.is_control() || is_bidi_formatting(c) {
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Unicode directional formatting / isolate code points. These don't count
+/// as control characters by `char::is_control()` but can flip the visible
+/// order of subsequent text in many terminals.
+fn is_bidi_formatting(c: char) -> bool {
+    matches!(
+        c,
+        '\u{202A}'..='\u{202E}'  // LRE, RLE, PDF, LRO, RLO
+        | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI
+        | '\u{FEFF}'             // BOM / zero-width no-break space
+    )
 }
 
 fn parse_path(raw: &str, cfg: &mut RenderConfig) {
@@ -152,7 +221,12 @@ fn parse_path(raw: &str, cfg: &mut RenderConfig) {
 /// the whole path as text.
 fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
     let mut matched = false;
-    for tok_raw in seg.split('+') {
+    for tok_raw in seg.split('+').take(MAX_DIRECTIVE_TOKENS) {
+        // Skip oversize tokens without lowercasing — no real directive is
+        // this long, so it's either junk or an attempt to blow up alloc.
+        if tok_raw.len() > MAX_TOKEN_LEN {
+            continue;
+        }
         let tok = tok_raw.to_lowercase();
         if is_font(&tok) {
             cfg.font = tok;
@@ -194,11 +268,19 @@ fn is_layout(tok: &str) -> bool {
 }
 
 fn apply_query(query: &str, cfg: &mut RenderConfig) {
-    for pair in query.split('&') {
+    for pair in query.split('&').take(MAX_QUERY_PAIRS) {
         if pair.is_empty() {
             continue;
         }
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        // Clip each value before lowercasing/storing so an attacker can't
+        // balloon `font=<megabytes>` into memory through any branch below.
+        // `floor_char_boundary` is unstable — walk back to a UTF-8 boundary.
+        let mut end = v.len().min(MAX_QUERY_VALUE_LEN);
+        while end > 0 && !v.is_char_boundary(end) {
+            end -= 1;
+        }
+        let v = &v[..end];
         // Valueless flags: ?animate, ?once.
         if v.is_empty() {
             match k {
@@ -601,6 +683,87 @@ mod tests {
     #[test]
     fn percent_encoded_in_text_after_directive() {
         assert_eq!(parse("/tiny/HI%7Cthere", None).text, "HI|there");
+    }
+
+    #[test]
+    fn control_chars_stripped_from_text() {
+        // %1B is ESC; raw escapes must not reach cfonts (terminal injection).
+        let cfg = parse("/%1B%5B31mPWNED", None);
+        assert!(!cfg.text.contains('\x1b'));
+        assert!(!cfg.text.chars().any(|c| c.is_control()));
+    }
+
+    #[test]
+    fn bidi_override_stripped_from_text() {
+        // U+202E (RLO) flips the visible order of following chars.
+        let cfg = parse("/abc\u{202E}def", None);
+        assert!(!cfg.text.contains('\u{202E}'));
+    }
+
+    #[test]
+    fn pipe_line_breaks_capped() {
+        let many = "a".to_string() + &"|a".repeat(50);
+        let cfg = parse(&format!("/{many}"), None);
+        let breaks = cfg.text.chars().filter(|c| *c == '|').count();
+        assert!(
+            breaks <= MAX_LINE_BREAKS,
+            "got {breaks} pipes, want <= {MAX_LINE_BREAKS}"
+        );
+    }
+
+    #[test]
+    fn oversize_directive_token_ignored() {
+        // A huge non-matching token next to a real one shouldn't alloc the
+        // lowercase and shouldn't prevent `tiny` from matching.
+        // Just over MAX_TOKEN_LEN — enough to trigger the skip-without-
+        // lowercasing path, without pushing the whole URL past MAX_URL_LEN.
+        let huge = "z".repeat(MAX_TOKEN_LEN * 4);
+        let path = format!("/tiny+{huge}/Hi");
+        let cfg = parse(&path, None);
+        assert_eq!(cfg.font, "tiny");
+        assert_eq!(cfg.text, "Hi");
+    }
+
+    #[test]
+    fn directive_token_count_capped() {
+        // More than MAX_DIRECTIVE_TOKENS junk tokens before a real one —
+        // everything past the cap is dropped. Real directive at position
+        // MAX_DIRECTIVE_TOKENS+1 should NOT be applied.
+        let junk = "bogus+".repeat(MAX_DIRECTIVE_TOKENS);
+        let path = format!("/{junk}tiny/Hi");
+        let cfg = parse(&path, None);
+        assert_eq!(cfg.font, DEFAULT_FONT, "late `tiny` should be dropped");
+    }
+
+    #[test]
+    fn oversize_query_value_truncated() {
+        // `font=<huge>` should never cause megabytes of allocation. We can't
+        // easily observe the clip externally, but parsing must not hang or
+        // panic and the bogus font falls through as the default name space.
+        let huge = "z".repeat(10_000);
+        let q = format!("font={huge}");
+        let cfg = parse("/Hi", Some(&q));
+        assert!(cfg.font.len() <= MAX_QUERY_VALUE_LEN);
+    }
+
+    #[test]
+    fn query_pair_count_capped() {
+        // Past MAX_QUERY_PAIRS we stop reading, so the final `fps=25` is
+        // ignored and the default remains.
+        let mut q = String::new();
+        for _ in 0..MAX_QUERY_PAIRS {
+            q.push_str("x=1&");
+        }
+        q.push_str("fps=25");
+        let cfg = parse("/Hi", Some(&q));
+        assert_eq!(cfg.fps, DEFAULT_FPS);
+    }
+
+    #[test]
+    fn oversize_url_truncated_safely() {
+        let huge = "a".repeat(MAX_URL_LEN * 4);
+        let cfg = parse(&format!("/{huge}"), None);
+        assert!(cfg.text.chars().count() <= MAX_TEXT_LEN);
     }
 
     #[test]

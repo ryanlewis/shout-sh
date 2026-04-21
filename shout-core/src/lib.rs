@@ -19,6 +19,7 @@ pub mod fonts;
 pub mod parser;
 pub mod presets;
 pub mod render;
+pub mod sanitize;
 pub mod sgr;
 pub mod shader;
 

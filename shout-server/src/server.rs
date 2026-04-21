@@ -19,7 +19,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
 use shout_core::fonts;
-use shout_core::parser::{Mode, RenderConfig, parse};
+use shout_core::parser::{MAX_PARAM_LEN, MAX_URL_LEN, Mode, RenderConfig, parse};
 use shout_core::presets;
 use shout_core::render::{RenderError, banner, emit_shaded, render_cells, render_config};
 use shout_core::sgr::{self, Cell, ansi};
@@ -66,6 +66,9 @@ fn asset_for(name: &str) -> Option<(&'static [u8], &'static str)> {
 }
 
 async fn app_asset(Path(file): Path<String>) -> Response {
+    if file.len() > MAX_PARAM_LEN {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     match asset_for(&file) {
         Some((body, ctype)) => (
             [
@@ -132,6 +135,9 @@ async fn fonts_list() -> Response {
 }
 
 async fn font_preview(Path(name): Path<String>) -> Response {
+    if name.len() > MAX_PARAM_LEN {
+        return error_response(RenderError::UnknownFont);
+    }
     let lower = name.to_lowercase();
     if !fonts::is_font(&lower) {
         return error_response(RenderError::UnknownFont);
@@ -154,6 +160,9 @@ async fn presets_list() -> Response {
 }
 
 async fn preset_preview(Path(name): Path<String>) -> Response {
+    if name.len() > MAX_PARAM_LEN {
+        return error_response(RenderError::UnknownPreset);
+    }
     let cfg = RenderConfig {
         text: "Hello World".into(),
         preset: name.to_lowercase(),
@@ -180,6 +189,16 @@ fn is_browser(headers: &HeaderMap) -> bool {
 }
 
 async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
+    let path_len = uri.path().len();
+    let query_len = uri.query().map(|q| q.len() + 1).unwrap_or(0);
+    if path_len + query_len > MAX_URL_LEN {
+        return (
+            StatusCode::URI_TOO_LONG,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            "url too long.\n",
+        )
+            .into_response();
+    }
     let mut cfg = parse(uri.path(), uri.query());
     if is_browser(&headers) {
         cfg.once = true;

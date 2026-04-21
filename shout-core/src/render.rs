@@ -11,6 +11,7 @@ use cfonts::{BgColors, Colors, Env, Options, Rgb, render};
 use crate::fonts::{self, resolve};
 use crate::parser::{Mode, RenderConfig};
 use crate::presets;
+use crate::sanitize::sanitize_ansi;
 use crate::sgr::{self, Cell};
 use crate::shader::{Filter, Rainbow, SLOT_SENTINELS};
 
@@ -206,7 +207,10 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
     let normalized = if cfg.browser {
         browser_to_sgr(&raw)
     } else {
-        raw
+        // Belt-and-braces against a future cfonts regression emitting
+        // anything beyond plain SGR. `browser_to_sgr` already constructs
+        // escapes from scratch, so it skips this filter.
+        sanitize_ansi(&raw)
     };
     Ok(pad_vertically(&normalized, cfg.padding))
 }

@@ -229,12 +229,31 @@ async fn unknown_color_via_query_is_400() {
 }
 
 #[tokio::test]
-async fn very_long_text_is_capped_not_panic() {
-    // 5000 a's — server must not OOM or timeout.
-    let long = "a".repeat(5000);
+async fn very_long_text_within_cap_renders_ok() {
+    // Just under MAX_URL_LEN — server truncates text to MAX_TEXT_LEN, no panic.
+    let long = "a".repeat(200);
     let (status, _, body) = get(&format!("/{long}")).await;
     assert_eq!(status, StatusCode::OK);
     assert!(!body.is_empty());
+}
+
+#[tokio::test]
+async fn oversize_url_rejected_with_414() {
+    // Past MAX_URL_LEN we refuse outright rather than alloc / decode it.
+    let huge = "a".repeat(1000);
+    let (status, _, _) = get(&format!("/{huge}")).await;
+    assert_eq!(status, StatusCode::URI_TOO_LONG);
+}
+
+#[tokio::test]
+async fn escape_sequences_in_text_are_stripped() {
+    // %1B is literal ESC. If this leaked into the banner body it would let a
+    // caller smuggle terminal-hijack sequences through shout.sh.
+    let (status, _, body) = get("/%1B%5B31mPWNED").await;
+    assert_eq!(status, StatusCode::OK);
+    // The only ESC in the body should be the SGR reset at the end of the
+    // banner — never the raw `%1B[31m` we asked for.
+    assert!(!body.contains("\x1b[31mPWNED"));
 }
 
 #[tokio::test]
