@@ -37,7 +37,41 @@ pub fn app() -> Router {
         .route("/favicon.ico", get(favicon))
         .route("/fonts", get(fonts_list))
         .route("/fonts/{name}", get(font_preview))
+        .route("/_app/{file}", get(app_asset))
         .fallback(render_fallback)
+}
+
+/// Embedded playground assets. Keep this list in sync with web/dist/.
+/// Anything here is served at `/_app/{file}` with its matching MIME.
+const ASSET_INDEX_HTML: &[u8] = include_bytes!("../../web/dist/index.html");
+const ASSET_MAIN_JS: &[u8] = include_bytes!("../../web/dist/main.js");
+const ASSET_MAIN_CSS: &[u8] = include_bytes!("../../web/dist/main.css");
+const ASSET_WASM_JS: &[u8] = include_bytes!("../../web/dist/shout_wasm.js");
+const ASSET_WASM_BG: &[u8] = include_bytes!("../../web/dist/shout_wasm_bg.wasm");
+
+fn asset_for(name: &str) -> Option<(&'static [u8], &'static str)> {
+    Some(match name {
+        "index.html" => (ASSET_INDEX_HTML, "text/html; charset=utf-8"),
+        "main.js" => (ASSET_MAIN_JS, "text/javascript; charset=utf-8"),
+        "main.css" => (ASSET_MAIN_CSS, "text/css; charset=utf-8"),
+        "shout_wasm.js" => (ASSET_WASM_JS, "text/javascript; charset=utf-8"),
+        "shout_wasm_bg.wasm" => (ASSET_WASM_BG, "application/wasm"),
+        _ => return None,
+    })
+}
+
+async fn app_asset(Path(file): Path<String>) -> Response {
+    match asset_for(&file) {
+        Some((body, ctype)) => (
+            [
+                (header::CONTENT_TYPE, ctype),
+                (header::CACHE_CONTROL, "public, max-age=300"),
+            ],
+            body,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 fn plain<S: Into<String>>(body: S) -> Response {
@@ -62,8 +96,22 @@ fn error_response(err: RenderError) -> Response {
         .into_response()
 }
 
-async fn root() -> Response {
+async fn root(headers: HeaderMap) -> Response {
+    if accepts_html(&headers) {
+        return (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            ASSET_INDEX_HTML,
+        )
+            .into_response();
+    }
     plain(HELP.as_str())
+}
+
+fn accepts_html(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| s.contains("text/html"))
 }
 
 async fn health() -> Response {

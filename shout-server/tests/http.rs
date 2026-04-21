@@ -258,6 +258,72 @@ async fn unknown_path_directives_fall_through_to_text() {
     assert_eq!(status, StatusCode::OK);
 }
 
+async fn get_with_accept(uri: &str, accept: &str) -> (StatusCode, String, Vec<u8>) {
+    let req = Request::builder()
+        .uri(uri)
+        .header(header::ACCEPT, accept)
+        .body(Body::empty())
+        .unwrap();
+    let resp = app().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let ctype = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .map(|v| v.to_str().unwrap().to_string())
+        .unwrap_or_default();
+    let bytes = to_bytes(resp.into_body(), 4 * 1024 * 1024).await.unwrap();
+    (status, ctype, bytes.to_vec())
+}
+
+#[tokio::test]
+async fn root_html_accept_returns_playground() {
+    let (status, ctype, body) = get_with_accept("/", "text/html").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ctype.starts_with("text/html"));
+    let s = String::from_utf8_lossy(&body);
+    assert!(s.contains("<title>shout.sh"), "expected playground HTML");
+}
+
+#[tokio::test]
+async fn root_plain_accept_returns_help() {
+    let (status, ctype, body) = get_with_accept("/", "text/plain").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ctype.starts_with("text/plain"));
+    let s = String::from_utf8_lossy(&body);
+    assert!(s.contains("USAGE"));
+}
+
+#[tokio::test]
+async fn app_asset_main_js_has_javascript_ctype() {
+    let (status, ctype, body) = get("/_app/main.js").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ctype.contains("javascript"), "got: {ctype}");
+    assert!(!body.is_empty());
+}
+
+#[tokio::test]
+async fn app_asset_main_css_has_css_ctype() {
+    let (status, ctype, _) = get("/_app/main.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ctype.contains("text/css"));
+}
+
+#[tokio::test]
+async fn app_asset_wasm_has_application_wasm_ctype() {
+    // Required for WebAssembly.instantiateStreaming to succeed in browsers.
+    let (status, ctype, body) = get_with_accept("/_app/shout_wasm_bg.wasm", "*/*").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ctype, "application/wasm", "got: {ctype}");
+    // wasm magic: \0asm
+    assert_eq!(&body[..4], b"\0asm");
+}
+
+#[tokio::test]
+async fn app_asset_unknown_is_404() {
+    let (status, _, _) = get("/_app/does-not-exist.js").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn post_on_named_route_is_405() {
     use axum::http::Method;
