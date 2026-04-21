@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>shout.sh</title>
+		<link rel="stylesheet" href="/_app/main.css" />
+	</head>
+	<body>
+		<div id="app">
+			<div class="container">
+				<header class="masthead">
+					<span class="wordmark">shout.sh</span>
+					<span class="tick">PLAYGROUND</span>
+				</header>
+
+				<section class="playground">
+					<div class="prompt-line" role="group" aria-label="text input">
+						<span class="ps1">$ curl shout.sh/</span>
+						<input
+							id="text-in"
+							class="text-in"
+							type="text"
+							spellcheck="false"
+							autocapitalize="off"
+							autocomplete="off"
+							value="HELLO"
+							maxlength="40"
+							aria-label="banner text"
+						/>
+						<span class="caret" aria-hidden="true"></span>
+					</div>
+
+					<div class="controls">
+						<div class="opt">
+							<span class="opt__label">FONT</span>
+							<div
+								id="font-picker"
+								class="chips"
+								role="radiogroup"
+								aria-label="font"
+							></div>
+						</div>
+						<div class="opt">
+							<span class="opt__label">MODE</span>
+							<div id="mode-picker" class="chips" role="radiogroup" aria-label="mode">
+								<button type="button" role="radio" data-mode="solid">solid</button>
+								<button
+									type="button"
+									role="radio"
+									data-mode="rainbow"
+									aria-checked="true"
+								>
+									rainbow
+								</button>
+								<button type="button" role="radio" data-mode="fire">fire</button>
+							</div>
+						</div>
+						<div class="opt">
+							<input id="once-cb" type="checkbox" />
+							<label for="once-cb" class="check"
+								><span class="check__box">[ ]</span
+								><span>once (static)</span></label
+							>
+						</div>
+						<div class="opt opt--fps">
+							<label class="opt__label" for="fps-in">FPS</label>
+							<input id="fps-in" type="range" min="1" max="30" value="10" />
+							<span id="fps-val" class="fps-val">10</span>
+						</div>
+					</div>
+
+					<div id="frame" class="frame" aria-live="polite" aria-busy="true">
+						<pre class="shout-frame loading">loading playground…</pre>
+					</div>
+
+					<div class="curl" role="group" aria-label="curl command">
+						<span id="curl-cmd" class="prompt">curl shout.sh/</span>
+						<button
+							id="copy-btn"
+							class="btn-ascii"
+							type="button"
+							aria-label="copy curl command"
+						>
+							[ copy ]
+						</button>
+					</div>
+					<div id="log" class="log" aria-live="polite"></div>
+				</section>
+
+				<footer class="foot">
+					<p class="muted">
+						the same url renders here via a local wasm build of the render pipeline.
+						curl the server for the terminal version.
+					</p>
+				</footer>
+			</div>
+		</div>
+		<script type="module" src="/_app/main.js"></script>
+	</body>
+</html>

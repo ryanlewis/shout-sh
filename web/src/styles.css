@@ -1,0 +1,256 @@
+/* shout.sh playground — lo-fi terminal, monochrome. Imports Jetbrains Mono
+   directly from Google Fonts to match the design-system cards. */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+	--bg: #000000;
+	--bg-1: #0a0a0a;
+	--fg: #f5f5f5;
+	--fg-1: #d0d0d0;
+	--fg-2: #8a8a8a;
+	--fg-3: #5a5a5a;
+	--rule: #2e2e2e;
+	--rule-strong: #5a5a5a;
+	--font-mono: 'JetBrains Mono', 'Menlo', 'DejaVu Sans Mono', 'Consolas', ui-monospace, monospace;
+	--font-ascii: 'Menlo', 'DejaVu Sans Mono', 'Consolas', ui-monospace, monospace;
+	--blink: 1.06s;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-size: 15px;
+	line-height: 1.5;
+	font-variant-ligatures: none;
+	-webkit-font-smoothing: antialiased;
+}
+
+.container {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 32px 24px;
+}
+
+.masthead {
+	display: flex;
+	align-items: baseline;
+	gap: 16px;
+	padding-bottom: 16px;
+	border-bottom: 1px dashed var(--rule);
+}
+.wordmark {
+	font-weight: 700;
+	font-size: 20px;
+}
+.tick {
+	color: var(--fg-2);
+	font-size: 11px;
+	letter-spacing: 0.12em;
+}
+
+.playground {
+	margin-top: 24px;
+}
+
+.prompt-line {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	font-size: 22px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--rule);
+}
+.ps1 {
+	color: var(--fg-3);
+	white-space: nowrap;
+	user-select: none;
+}
+.text-in {
+	all: unset;
+	flex: 1;
+	min-width: 4ch;
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-size: 28px;
+	font-weight: 500;
+	caret-color: var(--fg);
+}
+.text-in::placeholder {
+	color: var(--fg-3);
+}
+
+.caret {
+	display: inline-block;
+	width: 0.55ch;
+	height: 1em;
+	background: var(--fg);
+	animation: blink var(--blink) steps(1, end) infinite;
+}
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+.controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px 20px;
+	align-items: center;
+	margin: 16px 0 20px;
+}
+.opt {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+.opt__label {
+	color: var(--fg-2);
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.chips {
+	display: flex;
+	border: 1px solid var(--rule);
+}
+.chips button {
+	all: unset;
+	cursor: pointer;
+	padding: 4px 10px;
+	font-size: 13px;
+	color: var(--fg-1);
+	border-right: 1px solid var(--rule);
+}
+.chips button:last-child {
+	border-right: 0;
+}
+.chips button:hover {
+	color: var(--fg);
+}
+.chips button[aria-checked='true'] {
+	background: var(--fg);
+	color: var(--bg);
+}
+.chips button:focus-visible {
+	outline: 1px dashed var(--fg);
+	outline-offset: -3px;
+}
+
+#once-cb {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+.check {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	font-size: 13px;
+	color: var(--fg-1);
+	user-select: none;
+}
+.check__box {
+	color: var(--fg);
+}
+.check:hover .check__box {
+	background: var(--fg);
+	color: var(--bg);
+}
+#once-cb:focus-visible + .check .check__box {
+	outline: 1px dashed var(--fg);
+}
+
+.opt--fps {
+	gap: 8px;
+}
+.opt--fps input[type='range'] {
+	accent-color: var(--fg);
+	width: 140px;
+}
+.fps-val {
+	color: var(--fg-1);
+	font-size: 13px;
+	min-width: 3ch;
+	text-align: right;
+}
+
+.frame {
+	border: 1px solid var(--rule-strong);
+	padding: 16px 20px;
+	margin: 20px 0;
+	background: var(--bg);
+	min-height: 10em;
+	overflow-x: auto;
+}
+.shout-frame {
+	font-family: var(--font-ascii);
+	font-size: 14px;
+	line-height: 1;
+	letter-spacing: 0;
+	white-space: pre;
+	margin: 0;
+	color: var(--fg);
+}
+.shout-frame.loading {
+	color: var(--fg-3);
+	font-family: var(--font-mono);
+	line-height: 1.5;
+}
+
+.curl {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	background: var(--bg-1);
+	padding: 10px 12px;
+	margin: 16px 0 8px;
+	border: 1px solid var(--rule);
+	font-size: 13px;
+}
+.curl .prompt {
+	flex: 1;
+	overflow-x: auto;
+	white-space: nowrap;
+}
+.btn-ascii {
+	all: unset;
+	cursor: pointer;
+	padding: 2px 8px;
+	color: var(--fg);
+	font-size: 13px;
+}
+.btn-ascii:hover {
+	background: var(--fg);
+	color: var(--bg);
+}
+
+.log {
+	font-size: 12px;
+	color: var(--fg-2);
+	min-height: 1.4em;
+	margin: 4px 0 0;
+}
+.log__line {
+	margin: 1px 0;
+}
+
+.foot {
+	margin-top: 40px;
+	border-top: 1px dashed var(--rule);
+	padding-top: 16px;
+}
+.muted {
+	color: var(--fg-2);
+	font-size: 13px;
+}
