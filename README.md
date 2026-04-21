@@ -105,14 +105,40 @@ don't mix.
 | `/fonts/{name}` | preview a font       |
 | `/health`       | health check         |
 
+## playground
+
+open [shout.sh](https://shout.sh) in a browser and type. the same rendering
+pipeline that serves `curl` is compiled to wasm and runs locally — every
+frame is rendered in your tab, no streaming, no round-trips. the page shows
+the exact `curl` command for the current state so you can copy it and paste
+into a terminal.
+
+```
+$ curl shout.sh/           # plain text help (curl)
+$ curl -H 'Accept: text/html' shout.sh/   # the playground html
+```
+
 ## development
 
 ```
-$ just         # list targets
-$ just run     # cargo run on :8080
-$ just test    # cargo test
-$ just lint    # fmt check + clippy -D warnings
-$ just ci      # lint + test + release build
+$ just wasm-build   # cfonts → wasm32 via wasm-pack
+$ just web-build    # wasm-build + pnpm build of the ts client
+$ just web-dev      # esbuild watcher for the playground
+```
+
+the server embeds the built `web/dist/` via `include_bytes!`, so
+`just web-build` must run before `cargo build -p shout-server`.
+
+## justfile
+
+```
+$ just              # list targets
+$ just run          # cargo run -p shout-server on :8080
+$ just test         # cargo test --all
+$ just lint         # fmt check + clippy -D warnings
+$ just wasm-build   # wasm-pack build of shout-wasm
+$ just web-build    # wasm-build + pnpm build (regenerates web/dist/)
+$ just ci           # web-build + lint + test + release build
 ```
 
 `PORT` env var overrides the default `8080`.
@@ -128,6 +154,16 @@ combined work gpl-3 — fine for this project.
 [cfonts]: https://github.com/dominikwilkowski/cfonts
 
 ## changes
+
+### phase 3 → browser playground
+
+- the render pipeline is now a separate crate (`shout-core`) that compiles
+  to wasm alongside the axum server (`shout-server`). one renderer, two call
+  sites.
+- `/` content-negotiates: `Accept: text/html` gets an interactive playground
+  that runs the pipeline locally via wasm-bindgen. curl users still see the
+  plain-text help.
+- `/_app/{file}` serves the embedded ts + css + wasm bundle.
 
 ### phase 2 → animation
 
