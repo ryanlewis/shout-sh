@@ -159,6 +159,37 @@ body {
 	color: var(--fg-1);
 }
 
+/* Fun mode chips: rainbow/fire advertise their effect via button color. */
+.chips button[data-mode='rainbow'] {
+	background-image: linear-gradient(
+		90deg,
+		#ff3b3b,
+		#ff8a1f,
+		#f5d300,
+		#3ad14a,
+		#2aa8ff,
+		#8a5cff,
+		#ff4fbf
+	);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	font-weight: 700;
+}
+.chips button[data-mode='fire'] {
+	background-image: linear-gradient(180deg, #ffd84d, #ff8a1f 55%, #ff2a1f);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	font-weight: 700;
+}
+.chips button[data-mode='rainbow'][aria-checked='true'],
+.chips button[data-mode='fire'][aria-checked='true'] {
+	-webkit-background-clip: border-box;
+	background-clip: border-box;
+	color: var(--bg);
+}
+
 #once-cb {
 	position: absolute;
 	opacity: 0;
