@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "schedule:earlyMondays"
+  ],
+  "minimumReleaseAge": "14 days",
+  "internalChecksFilter": "strict",
+  "prCreation": "not-pending",
+  "semanticCommits": "enabled",
+  "semanticCommitScope": null,
+  "packageRules": [
+    {
+      "description": "Group all Go module updates into a single PR",
+      "matchManagers": ["gomod"],
+      "groupName": "go modules",
+      "semanticCommitType": "deps"
+    },
+    {
+      "description": "Group all GitHub Actions updates into a single PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "Auto-merge minor and patch GitHub Actions bumps after the 14-day stability window",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Sibling repos (figgo, tint) — auto-merge any update once they are tagged and the local replace directives are dropped from go.mod. Dormant until then.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "github.com/ryanlewis/figgo",
+        "github.com/ryanlewis/tint"
+      ],
+      "groupName": "ryanlewis sibling modules",
+      "minimumReleaseAge": "0 days",
+      "automerge": true
+    }
+  ]
+}
