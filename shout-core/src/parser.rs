@@ -324,11 +324,7 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
                 }
             }
             "bg" | "background" => cfg.background = v,
-            "spaceless" => {
-                if v != "0" && v != "false" {
-                    cfg.padding = 0;
-                }
-            }
+            "spaceless" if v != "0" && v != "false" => cfg.padding = 0,
             _ => {}
         }
     }
