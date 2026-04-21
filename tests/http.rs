@@ -170,10 +170,12 @@ async fn animate_once_flags_ignored_not_400() {
 }
 
 #[tokio::test]
-async fn unknown_mode_via_query_is_400() {
-    let (status, _, body) = get("/Hi?mode=matrix").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("mode not found"));
+async fn unknown_mode_via_query_is_silently_ignored() {
+    // Mirrors path-level behavior: unknown mode tokens don't 400, they
+    // fall through to the default (no mode).
+    let (status, ctype, _) = get("/Hi?mode=matrix").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ctype.starts_with("text/plain"));
 }
 
 #[tokio::test]

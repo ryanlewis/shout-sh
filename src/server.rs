@@ -11,6 +11,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
+use std::sync::LazyLock;
+
 use axum::Router;
 use axum::extract::Path;
 use axum::http::{StatusCode, Uri, header};
@@ -20,6 +22,12 @@ use axum::routing::get;
 use crate::fonts;
 use crate::parser::{RenderConfig, parse};
 use crate::render::{RenderError, banner, render_config};
+
+/// Help text is built once at startup; every `GET /` serves the same bytes.
+static HELP: LazyLock<String> = LazyLock::new(build_help_text);
+
+/// `/fonts` body: the canonical font list with a trailing newline.
+static FONTS_BODY: LazyLock<String> = LazyLock::new(|| format!("{}\n", fonts::list_newline()));
 
 pub fn app() -> Router {
     Router::new()
@@ -31,8 +39,12 @@ pub fn app() -> Router {
         .fallback(render_fallback)
 }
 
-fn plain(body: String) -> Response {
-    ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], body).into_response()
+fn plain<S: Into<String>>(body: S) -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body.into(),
+    )
+        .into_response()
 }
 
 fn error_response(err: RenderError) -> Response {
@@ -40,8 +52,7 @@ fn error_response(err: RenderError) -> Response {
         RenderError::EmptyText => StatusCode::OK,
         _ => StatusCode::BAD_REQUEST,
     };
-    let mut body = err.message().to_string();
-    body.push('\n');
+    let body = format!("{}\n", err.message());
     (
         status,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
@@ -51,11 +62,11 @@ fn error_response(err: RenderError) -> Response {
 }
 
 async fn root() -> Response {
-    plain(help_text())
+    plain(HELP.as_str())
 }
 
 async fn health() -> Response {
-    plain("ok\n".to_string())
+    plain("ok\n")
 }
 
 async fn favicon() -> Response {
@@ -63,9 +74,7 @@ async fn favicon() -> Response {
 }
 
 async fn fonts_list() -> Response {
-    let mut body = fonts::list_newline();
-    body.push('\n');
-    plain(body)
+    plain(FONTS_BODY.as_str())
 }
 
 async fn font_preview(Path(name): Path<String>) -> Response {
@@ -86,30 +95,32 @@ async fn font_preview(Path(name): Path<String>) -> Response {
 
 async fn render_fallback(uri: Uri) -> Response {
     let cfg = parse(uri.path(), uri.query());
-    let is_json = cfg.format == "json";
+    let json = cfg.json;
 
     match render_config(&cfg) {
-        Ok(out) => {
-            if is_json {
-                let body = serde_json::json!({
-                    "text": cfg.text,
-                    "font": cfg.font,
-                    "render": out,
-                });
-                (
-                    [(header::CONTENT_TYPE, "application/json")],
-                    body.to_string(),
-                )
-                    .into_response()
-            } else {
-                plain(out)
-            }
+        Ok(out) if json => {
+            let body = serde_json::json!({
+                "text": cfg.text,
+                "font": cfg.font,
+                "render": out,
+            });
+            (
+                [(header::CONTENT_TYPE, "application/json")],
+                body.to_string(),
+            )
+                .into_response()
         }
+        Ok(out) => plain(out),
         Err(e) => error_response(e),
     }
 }
 
+/// Exposed for tests that assert on help content.
 pub fn help_text() -> String {
+    HELP.clone()
+}
+
+fn build_help_text() -> String {
     let mut s = String::new();
     s.push_str(&banner());
     s.push('\n');
@@ -138,7 +149,6 @@ pub fn help_text() -> String {
     s.push_str("  `*bright` variants, e.g. `redbright`, `cyanbright`.\n\n");
     s.push_str("MORE\n");
     s.push_str("  $ curl shout.sh/fonts          # list fonts\n");
-    s.push_str("  $ curl shout.sh/fonts/block    # preview one\n\n");
-    s.push_str("phase 2 adds animation. phase 1 is static.\n");
+    s.push_str("  $ curl shout.sh/fonts/block    # preview one\n");
     s
 }

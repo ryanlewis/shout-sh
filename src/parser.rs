@@ -12,17 +12,36 @@
 // GNU General Public License for more details.
 
 use crate::fonts::is_font;
+use crate::render::is_color;
 
 pub const MAX_TEXT_LEN: usize = 200;
 pub const DEFAULT_FONT: &str = "block";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Solid,
+    Rainbow,
+    Fire,
+}
+
+impl Mode {
+    pub fn from_token(tok: &str) -> Option<Self> {
+        Some(match tok {
+            "solid" => Self::Solid,
+            "rainbow" => Self::Rainbow,
+            "fire" => Self::Fire,
+            _ => return None,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderConfig {
     pub text: String,
     pub font: String,
-    pub mode: String,
+    pub mode: Option<Mode>,
     pub color: String,
-    pub format: String,
+    pub json: bool,
 }
 
 impl Default for RenderConfig {
@@ -30,49 +49,15 @@ impl Default for RenderConfig {
         Self {
             text: String::new(),
             font: DEFAULT_FONT.to_string(),
-            mode: String::new(),
+            mode: None,
             color: String::new(),
-            format: String::new(),
+            json: false,
         }
     }
 }
 
-const MODES: &[&str] = &["rainbow", "fire", "solid"];
-const COLORS: &[&str] = &[
-    "red",
-    "green",
-    "blue",
-    "yellow",
-    "cyan",
-    "magenta",
-    "white",
-    "gray",
-    "redbright",
-    "greenbright",
-    "bluebright",
-    "yellowbright",
-    "cyanbright",
-    "magentabright",
-    "whitebright",
-];
 const LAYOUTS: &[&str] = &["full", "kern", "smush"];
 
-pub fn is_mode(tok: &str) -> bool {
-    MODES.contains(&tok)
-}
-
-pub fn is_color(tok: &str) -> bool {
-    COLORS.contains(&tok)
-}
-
-fn is_layout(tok: &str) -> bool {
-    LAYOUTS.contains(&tok)
-}
-
-/// Parse a URL path + query into a RenderConfig.
-///
-/// Path shape: `/{directives}/{text}` where directives is `+`-joined tokens.
-/// Single-segment paths are always text. Query params override path directives.
 pub fn parse(path: &str, query: Option<&str>) -> RenderConfig {
     let mut cfg = RenderConfig::default();
     let raw = path.strip_prefix('/').unwrap_or(path);
@@ -101,8 +86,8 @@ fn parse_path(raw: &str, cfg: &mut RenderConfig) {
 }
 
 /// Classification order: font, mode, color, flag, layout, width. Unknown
-/// tokens are ignored if at least one token matched; otherwise the whole
-/// path is treated as text by the caller.
+/// tokens are ignored when any token matched; otherwise the caller treats
+/// the whole path as text.
 fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
     let mut matched = false;
     for tok_raw in seg.split('+') {
@@ -110,28 +95,27 @@ fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
         if is_font(&tok) {
             cfg.font = tok;
             matched = true;
-        } else if is_mode(&tok) {
-            cfg.mode = tok;
+        } else if let Some(m) = Mode::from_token(&tok) {
+            cfg.mode = Some(m);
             matched = true;
         } else if is_color(&tok) {
             cfg.color = tok;
             matched = true;
-        } else if tok == "animate" || tok == "once" {
-            // phase-2 flags accepted for URL compat, ignored in phase 1
-            matched = true;
-        } else if is_layout(&tok) {
-            // layout directives were FIGlet-specific; cfonts ignores them
+        } else if tok == "animate" || tok == "once" || is_layout(&tok) {
             matched = true;
         } else if let Some(rest) = tok.strip_prefix('w')
             && !rest.is_empty()
             && let Ok(n) = rest.parse::<u32>()
             && n > 0
         {
-            // width directive accepted for URL compat; not wired to cfonts
             matched = true;
         }
     }
     matched
+}
+
+fn is_layout(tok: &str) -> bool {
+    LAYOUTS.contains(&tok)
 }
 
 fn apply_query(query: &str, cfg: &mut RenderConfig) {
@@ -139,18 +123,16 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
         if pair.is_empty() {
             continue;
         }
-        let (k, v) = match pair.split_once('=') {
-            Some((k, v)) => (k, v),
-            None => (pair, ""),
-        };
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
         if v.is_empty() {
             continue;
         }
+        let v = v.to_lowercase();
         match k {
-            "font" => cfg.font = v.to_lowercase(),
-            "mode" => cfg.mode = v.to_lowercase(),
-            "color" => cfg.color = v.to_lowercase(),
-            "format" => cfg.format = v.to_lowercase(),
+            "font" => cfg.font = v,
+            "mode" => cfg.mode = Mode::from_token(&v).or(cfg.mode),
+            "color" => cfg.color = v,
+            "format" => cfg.json = v == "json",
             _ => {}
         }
     }
@@ -160,60 +142,37 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
 mod tests {
     use super::*;
 
-    fn cfg(over: RenderConfig) -> RenderConfig {
-        let mut want = RenderConfig::default();
-        if !over.font.is_empty() {
-            want.font = over.font;
+    fn text(s: &str) -> RenderConfig {
+        RenderConfig {
+            text: s.into(),
+            ..Default::default()
         }
-        want.text = over.text;
-        want.mode = over.mode;
-        want.color = over.color;
-        want.format = over.format;
-        want
     }
 
     #[test]
     fn single_segment_is_text() {
-        assert_eq!(
-            parse("/HELLO", None),
-            cfg(RenderConfig {
-                text: "HELLO".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/HELLO", None), text("HELLO"));
     }
 
     #[test]
     fn single_segment_matching_font_name_is_text() {
-        assert_eq!(
-            parse("/block", None),
-            cfg(RenderConfig {
-                text: "block".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/block", None), text("block"));
     }
 
     #[test]
     fn plus_replaced_with_space() {
-        assert_eq!(
-            parse("/Hello+World", None),
-            cfg(RenderConfig {
-                text: "Hello World".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/Hello+World", None), text("Hello World"));
     }
 
     #[test]
     fn font_directive() {
         assert_eq!(
             parse("/tiny/Hello", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 font: "tiny".into(),
                 text: "Hello".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
@@ -221,11 +180,11 @@ mod tests {
     fn font_directive_with_multiword_text() {
         assert_eq!(
             parse("/block/Hello+World", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 font: "block".into(),
                 text: "Hello World".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
@@ -233,11 +192,11 @@ mod tests {
     fn mode_rainbow() {
         assert_eq!(
             parse("/rainbow/Hi", None),
-            cfg(RenderConfig {
-                mode: "rainbow".into(),
+            RenderConfig {
+                mode: Some(Mode::Rainbow),
                 text: "Hi".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
@@ -245,51 +204,38 @@ mod tests {
     fn color_directive() {
         assert_eq!(
             parse("/red/Hi", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 color: "red".into(),
                 text: "Hi".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
     #[test]
-    fn animate_flag_is_accepted_as_match() {
-        // phase-1: animate is recognized but not surfaced in config
-        assert_eq!(
-            parse("/animate/Hi", None),
-            cfg(RenderConfig {
-                text: "Hi".into(),
-                ..Default::default()
-            })
-        );
+    fn animate_flag_matches_but_is_ignored() {
+        assert_eq!(parse("/animate/Hi", None), text("Hi"));
     }
 
     #[test]
-    fn once_flag_is_accepted_as_match() {
-        assert_eq!(
-            parse("/once/Hi", None),
-            cfg(RenderConfig {
-                text: "Hi".into(),
-                ..Default::default()
-            })
-        );
+    fn once_flag_matches_but_is_ignored() {
+        assert_eq!(parse("/once/Hi", None), text("Hi"));
     }
 
     #[test]
     fn rainbow_plus_once() {
         assert_eq!(
             parse("/rainbow+once/Hi", None),
-            cfg(RenderConfig {
-                mode: "rainbow".into(),
+            RenderConfig {
+                mode: Some(Mode::Rainbow),
                 text: "Hi".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
     #[test]
-    fn layout_directives_are_ignored_silently() {
+    fn layout_directives_ignored_silently() {
         for l in ["full", "kern", "smush"] {
             let got = parse(&format!("/{l}/Hi"), None);
             assert_eq!(got.text, "Hi");
@@ -299,20 +245,19 @@ mod tests {
 
     #[test]
     fn width_directive_matches_but_is_ignored() {
-        let got = parse("/w120/Hi", None);
-        assert_eq!(got.text, "Hi");
+        assert_eq!(parse("/w120/Hi", None).text, "Hi");
     }
 
     #[test]
     fn combined_font_mode_animate() {
         assert_eq!(
             parse("/tiny+rainbow+animate/Hello+World", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 font: "tiny".into(),
-                mode: "rainbow".into(),
+                mode: Some(Mode::Rainbow),
                 text: "Hello World".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
@@ -327,99 +272,76 @@ mod tests {
     fn directives_are_case_insensitive() {
         assert_eq!(
             parse("/TINY+RAINBOW/Hi", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 font: "tiny".into(),
-                mode: "rainbow".into(),
+                mode: Some(Mode::Rainbow),
                 text: "Hi".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
     #[test]
     fn unknown_first_segment_is_text() {
-        assert_eq!(
-            parse("/notathing/Hello", None),
-            cfg(RenderConfig {
-                text: "notathing/Hello".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/notathing/Hello", None), text("notathing/Hello"));
     }
 
     #[test]
     fn unknown_token_with_known_token_still_matches() {
         assert_eq!(
             parse("/tiny+bogus/Hi", None),
-            cfg(RenderConfig {
+            RenderConfig {
                 font: "tiny".into(),
                 text: "Hi".into(),
                 ..Default::default()
-            })
+            }
         );
     }
 
     #[test]
     fn width_with_non_numeric_is_no_match() {
-        assert_eq!(
-            parse("/wfoo/Hi", None),
-            cfg(RenderConfig {
-                text: "wfoo/Hi".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/wfoo/Hi", None), text("wfoo/Hi"));
     }
 
     #[test]
     fn width_zero_is_no_match() {
-        assert_eq!(
-            parse("/w0/Hi", None),
-            cfg(RenderConfig {
-                text: "w0/Hi".into(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/w0/Hi", None), text("w0/Hi"));
     }
 
     #[test]
     fn empty_path() {
-        assert_eq!(
-            parse("/", None),
-            cfg(RenderConfig {
-                text: String::new(),
-                ..Default::default()
-            })
-        );
+        assert_eq!(parse("/", None), RenderConfig::default());
     }
 
     #[test]
     fn query_font_overrides_path_font() {
-        let got = parse("/tiny/Hi", Some("font=block"));
-        assert_eq!(got.font, "block");
+        assert_eq!(parse("/tiny/Hi", Some("font=block")).font, "block");
     }
 
     #[test]
     fn query_mode_overrides_path_mode() {
-        let got = parse("/rainbow/Hi", Some("mode=fire"));
-        assert_eq!(got.mode, "fire");
+        assert_eq!(
+            parse("/rainbow/Hi", Some("mode=fire")).mode,
+            Some(Mode::Fire)
+        );
     }
 
     #[test]
     fn query_format_json() {
-        let got = parse("/Hi", Some("format=json"));
-        assert_eq!(got.format, "json");
+        assert!(parse("/Hi", Some("format=json")).json);
     }
 
     #[test]
     fn text_is_truncated_to_max_len() {
         let long: String = "a".repeat(300);
-        let got = parse(&format!("/{long}"), None);
-        assert_eq!(got.text.chars().count(), MAX_TEXT_LEN);
+        assert_eq!(
+            parse(&format!("/{long}"), None).text.chars().count(),
+            MAX_TEXT_LEN
+        );
     }
 
     #[test]
     fn default_font_is_block() {
-        let got = parse("/Hi", None);
-        assert_eq!(got.font, "block");
+        assert_eq!(parse("/Hi", None).font, "block");
     }
 }

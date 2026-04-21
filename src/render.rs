@@ -14,23 +14,19 @@
 use cfonts::{Colors, Options, render};
 
 use crate::fonts::resolve;
-use crate::parser::RenderConfig;
+use crate::parser::{Mode, RenderConfig};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderError {
     UnknownFont,
-    UnknownMode,
     UnknownColor,
     EmptyText,
 }
 
 impl RenderError {
     pub fn message(&self) -> &'static str {
-        // Errors follow the design system: lowercase, period-terminated,
-        // with a fix hinted in backticks.
         match self {
             Self::UnknownFont => "font not found. try `curl shout.sh/fonts`.",
-            Self::UnknownMode => "mode not found. try `solid`, `rainbow`, or `fire`.",
             Self::UnknownColor => {
                 "color not found. try `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `white`, `gray`, or a `*bright` variant."
             }
@@ -39,8 +35,6 @@ impl RenderError {
     }
 }
 
-/// Named color → cfonts Colors enum. Mapping is total over the color list
-/// exposed by the parser.
 fn color_enum(name: &str) -> Option<Colors> {
     Some(match name {
         "red" => Colors::Red,
@@ -62,6 +56,10 @@ fn color_enum(name: &str) -> Option<Colors> {
     })
 }
 
+pub fn is_color(name: &str) -> bool {
+    color_enum(name).is_some()
+}
+
 pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
     if cfg.text.is_empty() {
         return Err(RenderError::EmptyText);
@@ -75,51 +73,37 @@ pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
         ..Options::default()
     };
 
-    match cfg.mode.as_str() {
-        "" => {
+    match cfg.mode {
+        None => {
             if !cfg.color.is_empty() {
-                let c = color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?;
-                opts.colors = vec![c];
+                opts.colors = vec![color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?];
             }
         }
-        "solid" => {
+        Some(Mode::Solid) => {
             let name = if cfg.color.is_empty() {
                 "white"
             } else {
                 cfg.color.as_str()
             };
-            let c = color_enum(name).ok_or(RenderError::UnknownColor)?;
-            opts.colors = vec![c];
+            opts.colors = vec![color_enum(name).ok_or(RenderError::UnknownColor)?];
         }
-        "rainbow" => {
-            // Candy = per-char random bright palette; closest static analog
-            // to legacy's animated rainbow shader.
+        Some(Mode::Rainbow) => {
             opts.colors = vec![Colors::Candy];
         }
-        "fire" => {
-            // Warm 3-stop hex gradient. Named-color gradients panic cfonts
-            // (see spike-findings); always pass hex.
+        Some(Mode::Fire) => {
+            // Named-color gradients panic cfonts (see spike-findings); always pass hex.
             opts.gradient = vec!["#ff0000".into(), "#ff9900".into(), "#ffff00".into()];
             opts.transition_gradient = true;
         }
-        _ => return Err(RenderError::UnknownMode),
     }
 
-    let out = render(opts);
-    Ok(out.text)
+    Ok(render(opts).text)
 }
 
-/// Render the SHOUT banner for the help page. Panic-free: if something
-/// goes sideways at startup we'd rather know immediately than serve
-/// garbage — but the inputs here are compile-time constants so the
-/// unwrap path is unreachable in practice.
 pub fn banner() -> String {
     let cfg = RenderConfig {
         text: "SHOUT".into(),
-        font: "block".into(),
-        mode: String::new(),
-        color: String::new(),
-        format: String::new(),
+        ..Default::default()
     };
     render_config(&cfg).unwrap_or_else(|_| String::from("SHOUT\n"))
 }
@@ -131,71 +115,78 @@ mod tests {
     fn base(text: &str) -> RenderConfig {
         RenderConfig {
             text: text.into(),
-            font: "block".into(),
-            mode: String::new(),
-            color: String::new(),
-            format: String::new(),
+            ..Default::default()
         }
     }
 
     #[test]
     fn empty_text_rejected() {
-        let cfg = base("");
-        assert_eq!(render_config(&cfg), Err(RenderError::EmptyText));
+        assert_eq!(render_config(&base("")), Err(RenderError::EmptyText));
     }
 
     #[test]
     fn unknown_font_rejected() {
-        let mut cfg = base("hi");
-        cfg.font = "standard".into();
+        let cfg = RenderConfig {
+            font: "standard".into(),
+            ..base("hi")
+        };
         assert_eq!(render_config(&cfg), Err(RenderError::UnknownFont));
     }
 
     #[test]
     fn default_renders_non_empty() {
-        let out = render_config(&base("hi")).unwrap();
-        assert!(!out.is_empty());
+        assert!(!render_config(&base("hi")).unwrap().is_empty());
     }
 
     #[test]
     fn solid_red_emits_red_sgr() {
-        let mut cfg = base("hi");
-        cfg.color = "red".into();
-        let out = render_config(&cfg).unwrap();
-        assert!(out.contains("\x1b[31m"), "expected red SGR in output");
+        let cfg = RenderConfig {
+            color: "red".into(),
+            ..base("hi")
+        };
+        assert!(render_config(&cfg).unwrap().contains("\x1b[31m"));
     }
 
     #[test]
     fn solid_mode_defaults_to_white() {
-        let mut cfg = base("hi");
-        cfg.mode = "solid".into();
-        let out = render_config(&cfg).unwrap();
-        assert!(out.contains("\x1b["), "expected ANSI SGR in output");
+        let cfg = RenderConfig {
+            mode: Some(Mode::Solid),
+            ..base("hi")
+        };
+        assert!(render_config(&cfg).unwrap().contains("\x1b["));
     }
 
     #[test]
     fn fire_mode_emits_truecolor_sgr() {
-        let mut cfg = base("hi");
-        cfg.mode = "fire".into();
-        let out = render_config(&cfg).unwrap();
-        assert!(
-            out.contains("\x1b[38;2;"),
-            "expected truecolor SGR in fire output"
-        );
+        let cfg = RenderConfig {
+            mode: Some(Mode::Fire),
+            ..base("hi")
+        };
+        assert!(render_config(&cfg).unwrap().contains("\x1b[38;2;"));
     }
 
     #[test]
     fn rainbow_mode_renders() {
-        let mut cfg = base("hi");
-        cfg.mode = "rainbow".into();
-        let out = render_config(&cfg).unwrap();
-        assert!(!out.is_empty());
+        let cfg = RenderConfig {
+            mode: Some(Mode::Rainbow),
+            ..base("hi")
+        };
+        assert!(!render_config(&cfg).unwrap().is_empty());
     }
 
     #[test]
-    fn unknown_mode_rejected() {
-        let mut cfg = base("hi");
-        cfg.mode = "matrix".into();
-        assert_eq!(render_config(&cfg), Err(RenderError::UnknownMode));
+    fn unknown_color_rejected() {
+        let cfg = RenderConfig {
+            color: "puce".into(),
+            ..base("hi")
+        };
+        assert_eq!(render_config(&cfg), Err(RenderError::UnknownColor));
+    }
+
+    #[test]
+    fn is_color_matches_supported() {
+        assert!(is_color("red"));
+        assert!(is_color("cyanbright"));
+        assert!(!is_color("puce"));
     }
 }
