@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shout-core", "shout-server"]
+members = ["shout-core", "shout-server", "shout-wasm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,3 +9,10 @@ license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 cfonts = "1.3.0"
+
+# wasm release profile — shipped to the browser, optimize for size.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
