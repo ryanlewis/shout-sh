@@ -6,13 +6,13 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-use cfonts::{Colors, Options, render};
+use cfonts::{Colors, Options, Rgb, render};
 
 use crate::fonts::{self, resolve};
 use crate::parser::{Mode, RenderConfig};
 use crate::presets;
 use crate::sgr::{self, Cell};
-use crate::shader::{Filter, Rainbow};
+use crate::shader::{Filter, Rainbow, SLOT_SENTINELS};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderError {
@@ -60,20 +60,54 @@ pub fn is_color(name: &str) -> bool {
     color_enum(name).is_some()
 }
 
-/// Map a preset onto cfonts' gradient path, clipped to the font's color count.
-/// Presets with more stops than the font consumes are silently truncated;
-/// a single-stop preset is duplicated so transition_gradient has a pair to
-/// interpolate between (cfonts panics on a 1-wide gradient in linear mode).
+/// For shader-driven modes: paint each of the font's slots with a distinct
+/// sentinel RGB so the shader can see which slot a cell came from. For
+/// single-slot fonts there's nothing to differentiate, so `fallback` is
+/// used instead (typically `Colors::White` for rainbow).
+fn apply_slot_sentinels(font_name: &str, opts: &mut Options, fallback: Colors) {
+    let slots = fonts::color_count(font_name);
+    if slots >= 2 {
+        opts.colors = (0..slots)
+            .map(|i| {
+                let (r, g, b) = SLOT_SENTINELS[i.min(SLOT_SENTINELS.len() - 1)];
+                Colors::Rgb(Rgb::Val(r, g, b))
+            })
+            .collect();
+    } else {
+        opts.colors = vec![fallback];
+    }
+}
+
+fn hex_to_rgb(hex: &str) -> Rgb {
+    let h = hex.trim_start_matches('#');
+    let r = u8::from_str_radix(h.get(0..2).unwrap_or("00"), 16).unwrap_or(0);
+    let g = u8::from_str_radix(h.get(2..4).unwrap_or("00"), 16).unwrap_or(0);
+    let b = u8::from_str_radix(h.get(4..6).unwrap_or("00"), 16).unwrap_or(0);
+    Rgb::Val(r, g, b)
+}
+
+/// Map a preset onto cfonts. Multi-slot fonts (3d, block, chrome, ...) get
+/// one solid color per slot — matches `cfonts -c A,B` and keeps slot 1 and
+/// slot 2 visually distinct. Single-slot fonts fall back to the transition
+/// gradient so the palette still reads across the text.
 fn apply_preset(font_name: &str, preset_name: &str, opts: &mut Options) -> Result<(), RenderError> {
     let preset = presets::resolve(preset_name).ok_or(RenderError::UnknownPreset)?;
-    let take = fonts::color_count(font_name).min(preset.stops.len());
-    let mut stops: Vec<String> = preset.stops[..take].iter().map(|s| (*s).into()).collect();
-    if stops.len() < 2 {
-        // transition_gradient expects at least 2 anchors; duplicate for 1-color fonts.
-        stops.push(stops[0].clone());
+    let slots = fonts::color_count(font_name);
+    if slots >= 2 {
+        let mut stops: Vec<&str> = preset.stops.iter().copied().take(slots).collect();
+        while stops.len() < slots {
+            stops.push(*stops.last().unwrap());
+        }
+        opts.colors = stops.into_iter().map(|s| Colors::Rgb(hex_to_rgb(s))).collect();
+    } else {
+        let mut stops: Vec<String> = preset.stops.iter().map(|s| (*s).into()).collect();
+        if stops.len() < 2 {
+            // transition_gradient expects at least 2 anchors.
+            stops.push(stops[0].clone());
+        }
+        opts.gradient = stops;
+        opts.transition_gradient = true;
     }
-    opts.gradient = stops;
-    opts.transition_gradient = true;
     Ok(())
 }
 
@@ -113,15 +147,23 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
             }
         }
         Some(Mode::Rainbow) => {
-            // Neutral base; the Rainbow shader recolors per-frame (frame 0
-            // for static output). Borders emit bare and the shader picks
-            // them up via char != ' '.
-            opts.colors = vec![Colors::White];
+            // Multi-slot fonts get per-slot sentinel colors so the shader can
+            // differentiate front/shadow layers. Single-slot fonts fall back
+            // to a neutral white base (shader recolors every non-space cell).
+            // Borders emit bare and are picked up via `char != ' '`.
+            apply_slot_sentinels(&cfg.font, &mut opts, Colors::White);
         }
         Some(Mode::Fire) => {
-            // Named-color gradients panic cfonts (see spike-findings); always pass hex.
-            opts.gradient = vec!["#ff0000".into(), "#ff9900".into(), "#ffff00".into()];
-            opts.transition_gradient = true;
+            // Same pattern as rainbow — multi-slot fonts get sentinels, so
+            // the Fire shader can render slot 1+ as dim embers behind the
+            // flame. Single-slot fonts use the legacy gradient path.
+            if fonts::color_count(&cfg.font) >= 2 {
+                apply_slot_sentinels(&cfg.font, &mut opts, Colors::White);
+            } else {
+                // Named-color gradients panic cfonts (see spike-findings); always pass hex.
+                opts.gradient = vec!["#ff0000".into(), "#ff9900".into(), "#ffff00".into()];
+                opts.transition_gradient = true;
+            }
         }
     }
 
@@ -283,6 +325,56 @@ mod tests {
             "expected truecolor (preset), got: {out}"
         );
         assert!(!out.contains("\x1b[31m"));
+    }
+
+    #[test]
+    fn preset_on_multi_slot_font_uses_two_distinct_colors() {
+        // 3d is a 2-slot font; neon has two very different stops. We expect
+        // both stops to appear as solid SGR runs (cfonts `-c A,B` behavior),
+        // not blended into intermediate gradient shades.
+        let cfg = RenderConfig {
+            font: "3d".into(),
+            preset: "neon".into(),
+            ..base("hi")
+        };
+        let out = render_config(&cfg).unwrap();
+        // neon stops: #ff00ea and #00eaff
+        assert!(
+            out.contains("\x1b[38;2;255;0;234m"),
+            "expected slot-1 color in output"
+        );
+        assert!(
+            out.contains("\x1b[38;2;0;234;255m"),
+            "expected slot-2 color in output"
+        );
+    }
+
+    #[test]
+    fn rainbow_on_multi_slot_font_tags_slots() {
+        // Cells from a 2-slot font under rainbow should arrive tagged with
+        // both slot sentinels so the shader can differentiate them.
+        let cfg = RenderConfig {
+            font: "3d".into(),
+            mode: Some(Mode::Rainbow),
+            ..base("hi")
+        };
+        let cells = render_cells(&cfg).unwrap();
+        let has_s0 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[0]));
+        let has_s1 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[1]));
+        assert!(has_s0 && has_s1, "expected both slot sentinels in cells");
+    }
+
+    #[test]
+    fn fire_on_multi_slot_font_tags_slots() {
+        let cfg = RenderConfig {
+            font: "3d".into(),
+            mode: Some(Mode::Fire),
+            ..base("hi")
+        };
+        let cells = render_cells(&cfg).unwrap();
+        let has_s0 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[0]));
+        let has_s1 = cells.iter().any(|c| c.rgb == Some(SLOT_SENTINELS[1]));
+        assert!(has_s0 && has_s1, "expected both slot sentinels in cells");
     }
 
     #[test]

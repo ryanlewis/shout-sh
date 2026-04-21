@@ -22,6 +22,22 @@ impl Filter for Identity {
     }
 }
 
+/// Slot sentinels used by `render_raw` to mark which cfonts paint slot a cell
+/// belongs to under shader-driven modes. Shaders look up these exact RGBs in
+/// `cell.rgb` to decide which per-slot variation to apply. The values are
+/// arbitrary but chosen to be visually unique and extremely unlikely to
+/// collide with any preset palette.
+pub const SLOT_SENTINELS: [Rgb; 3] = [(254, 0, 1), (0, 254, 1), (0, 1, 254)];
+
+/// Returns the slot index (0..N) if `cell.rgb` matches a sentinel, else None.
+pub fn slot_of(cell: &Cell) -> Option<u8> {
+    let rgb = cell.rgb?;
+    SLOT_SENTINELS
+        .iter()
+        .position(|s| *s == rgb)
+        .map(|i| i as u8)
+}
+
 pub struct Rainbow;
 
 impl Rainbow {
@@ -35,11 +51,19 @@ impl Filter for Rainbow {
         if cell.ch == ' ' {
             return cell.rgb;
         }
-        let h = (frame as f32 * Self::HUE_PER_FRAME
+        let base = (frame as f32 * Self::HUE_PER_FRAME
             + cell.col as f32 * Self::HUE_PER_COL
             + cell.row as f32 * Self::HUE_PER_ROW)
             .rem_euclid(360.0);
-        Some(hsl_to_rgb(h, 1.0, 0.6))
+        // Per-slot hue offset + lightness: slot 1 (shadow) trails the front
+        // face by 90° and sits at 0.35 lightness so it reads as a shaded
+        // backing layer. Slot 2 (deep shadow on chrome) goes further still.
+        let (offset, lightness) = match slot_of(cell) {
+            Some(1) => (90.0, 0.35),
+            Some(2) => (180.0, 0.25),
+            _ => (0.0, 0.6),
+        };
+        Some(hsl_to_rgb((base + offset).rem_euclid(360.0), 1.0, lightness))
     }
 }
 
@@ -52,6 +76,12 @@ impl Filter for Fire {
         if cell.ch == ' ' {
             return cell.rgb;
         }
+        // Slot 1+ on multi-slot fonts = the shadow / behind-the-flame layer.
+        // Render it as dim embers/char so the front flame reads distinctly.
+        let slot = slot_of(cell);
+        if matches!(slot, Some(s) if s >= 1) {
+            return Some(ember(cell, frame, slot.unwrap()));
+        }
         let rows = self.rows.max(1) as f32;
         // 3-stop vertical gradient: top=yellow, middle=orange, bottom=red.
         // t in [0,1] bottom → top.
@@ -63,6 +93,22 @@ impl Filter for Fire {
         let g = (g as f32 + flick * 0.4).clamp(0.0, 255.0) as u8;
         Some((r, g, b))
     }
+}
+
+/// Dim ember/smoke palette for background-slot cells under Fire mode. Uses
+/// a slower flicker (frame/3) and a darker base so it reads as char, not
+/// flame. Slot 2 is darker still for 3-slot fonts like chrome.
+fn ember(cell: &Cell, frame: u64, slot: u8) -> Rgb {
+    let base: Rgb = if slot >= 2 {
+        (40, 10, 0)
+    } else {
+        (90, 25, 5)
+    };
+    let n = noise(cell.row as u32, cell.col as u32, (frame / 3) as u32);
+    let flick = (n as f32 / 255.0 - 0.5) * 24.0; // ±12
+    let r = (base.0 as f32 + flick).clamp(0.0, 255.0) as u8;
+    let g = (base.1 as f32 + flick * 0.4).clamp(0.0, 255.0) as u8;
+    (r, g, base.2)
 }
 
 fn tri_gradient(t: f32, a: Rgb, b: Rgb, c: Rgb) -> Rgb {
@@ -148,6 +194,38 @@ mod tests {
     fn rainbow_colors_non_space_bare_chars() {
         let c = cell('╗', 0, 0, None);
         assert!(Rainbow.shade(&c, 0).is_some());
+    }
+
+    #[test]
+    fn rainbow_slot_1_differs_from_slot_0() {
+        // Two cells at the same position but with different slot sentinels
+        // should shade differently — slot 1 is the shadow layer.
+        let c0 = cell('█', 0, 0, Some(SLOT_SENTINELS[0]));
+        let c1 = cell('█', 0, 0, Some(SLOT_SENTINELS[1]));
+        let r0 = Rainbow.shade(&c0, 0).unwrap();
+        let r1 = Rainbow.shade(&c1, 0).unwrap();
+        assert_ne!(r0, r1, "slot 0 and slot 1 should shade differently");
+    }
+
+    #[test]
+    fn fire_slot_1_is_dim_ember() {
+        // Slot 1 cells should render as dim ember (much darker than the
+        // flame at the same row).
+        let flame = cell('█', 0, 0, None);
+        let ember = cell('█', 0, 0, Some(SLOT_SENTINELS[1]));
+        let f = Fire { rows: 6 };
+        let rf = f.shade(&flame, 0).unwrap();
+        let re = f.shade(&ember, 0).unwrap();
+        // flame is much brighter in red channel than ember
+        assert!(rf.0 > re.0 + 100, "flame {:?} vs ember {:?}", rf, re);
+    }
+
+    #[test]
+    fn slot_of_matches_sentinels() {
+        assert_eq!(slot_of(&cell('x', 0, 0, Some(SLOT_SENTINELS[0]))), Some(0));
+        assert_eq!(slot_of(&cell('x', 0, 0, Some(SLOT_SENTINELS[1]))), Some(1));
+        assert_eq!(slot_of(&cell('x', 0, 0, Some((10, 20, 30)))), None);
+        assert_eq!(slot_of(&cell('x', 0, 0, None)), None);
     }
 
     #[test]
