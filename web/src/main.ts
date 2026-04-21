@@ -2,7 +2,7 @@
 
 import { loadWasm } from './wasm.js';
 import type { PlaygroundCfg } from './wasm.js';
-import type { UrlState } from './urls.js';
+import { buildCurl, type UrlState } from './urls.js';
 import { Preview } from './ui/Preview.js';
 import { mountFontPicker, type FontName } from './ui/FontPicker.js';
 import { mountControls, type Mode } from './ui/Controls.js';
@@ -20,6 +20,7 @@ async function main(): Promise<void> {
 	const fpsIn = must<HTMLInputElement>('#fps-in');
 	const fpsVal = must<HTMLElement>('#fps-val');
 	const curlOut = must<HTMLElement>('#curl-cmd');
+	const termCmd = must<HTMLElement>('#term-cmd');
 	const copyBtn = must<HTMLButtonElement>('#copy-btn');
 	const log = must<HTMLElement>('#log');
 
@@ -27,16 +28,14 @@ async function main(): Promise<void> {
 	try {
 		wasm = await loadWasm(WASM_URL);
 	} catch (e) {
-		frame.innerHTML = '';
-		const pre = document.createElement('pre');
-		pre.className = 'shout-frame';
-		pre.textContent =
+		frame.classList.remove('loading');
+		frame.textContent =
 			`playground unavailable (${String(e)})\n` + `try: curl shout.sh/rainbow/HELLO`;
-		frame.appendChild(pre);
 		return;
 	}
 
-	frame.removeAttribute('aria-busy');
+	frame.classList.remove('loading');
+	frame.parentElement?.removeAttribute('aria-busy');
 	const preview = new Preview({ wasm, target: frame });
 
 	const renderCurl = mountCurlSnippet({ display: curlOut, button: copyBtn, log });
@@ -50,6 +49,9 @@ async function main(): Promise<void> {
 		};
 		preview.update(cfg, { fps: state.fps, once: state.once });
 		renderCurl(state);
+		// Mirror the curl command inside the fake prompt — sells the terminal
+		// metaphor, and matches the copy-snippet below verbatim.
+		termCmd.textContent = buildCurl(state);
 	};
 
 	const shouter = mountShouter({

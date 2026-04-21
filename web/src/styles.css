@@ -193,6 +193,21 @@ body {
 	min-height: 10em;
 	overflow-x: auto;
 }
+.term-prompt {
+	font-family: var(--font-mono);
+	font-size: 13px;
+	color: var(--fg-1);
+	margin: 0 0 12px;
+	white-space: nowrap;
+	overflow-x: auto;
+}
+/* The ps span is non-selectable so double-click on the command span
+   highlights only the curl command — not the prompt. */
+.term-prompt .ps {
+	color: var(--fg-3);
+	user-select: none;
+	-webkit-user-select: none;
+}
 .shout-frame {
 	font-family: var(--font-ascii);
 	font-size: 14px;

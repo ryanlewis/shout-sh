@@ -26,7 +26,5 @@ export function buildPath(state: UrlState): string {
 }
 
 export function buildCurl(state: UrlState, host = 'shout.sh'): string {
-	// -N lets the user see animation. Omit for `once`.
-	const flag = state.once ? '' : '-N ';
-	return `curl ${flag}${host}${buildPath(state)}`;
+	return `curl ${host}${buildPath(state)}`;
 }

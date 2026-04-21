@@ -93,23 +93,59 @@ pub fn render_frame_html(cfg_json: &str, frame: u32) -> Result<String, JsError> 
 }
 
 fn render_frame(cells: &[Cell], mode: Mode, frame: u64) -> String {
+    let cells = trim_blank_rows(cells);
     let mut out = String::with_capacity(cells.len() * 16);
     match mode {
-        Mode::Rainbow => emit_html_body(cells, |c| Rainbow.shade(c, frame), &mut out),
+        Mode::Rainbow => emit_html_body(&cells, |c| Rainbow.shade(c, frame), &mut out),
         Mode::Fire => {
-            let rows = sgr::row_count(cells);
+            let rows = sgr::row_count(&cells);
             let fire = Fire { rows };
-            emit_html_body(cells, |c| fire.shade(c, frame), &mut out);
+            emit_html_body(&cells, |c| fire.shade(c, frame), &mut out);
         }
-        Mode::Solid => emit_html_body(cells, |c| Identity.shade(c, frame), &mut out),
+        Mode::Solid => emit_html_body(&cells, |c| Identity.shade(c, frame), &mut out),
     }
     out
 }
 
 fn render_frame_identity(cells: &[Cell]) -> String {
+    let cells = trim_blank_rows(cells);
     let mut out = String::with_capacity(cells.len() * 16);
-    emit_html_body(cells, |c| Identity.shade(c, 0), &mut out);
+    emit_html_body(&cells, |c| Identity.shade(c, 0), &mut out);
     out
+}
+
+/// Drop all-whitespace rows and renumber the survivors — cfonts pads its
+/// output with blank rows that look fine in a terminal (they're just more
+/// of the scrollback) but leave ugly empty lines in a bordered HTML frame.
+fn trim_blank_rows(cells: &[Cell]) -> Vec<Cell> {
+    let total_rows = sgr::row_count(cells);
+    if total_rows == 0 {
+        return Vec::new();
+    }
+    let mut nonblank = vec![false; total_rows as usize];
+    for c in cells {
+        if !c.ch.is_whitespace() {
+            nonblank[c.row as usize] = true;
+        }
+    }
+    let mut row_map = vec![u16::MAX; total_rows as usize];
+    let mut next = 0u16;
+    for (old, keep) in nonblank.iter().enumerate() {
+        if *keep {
+            row_map[old] = next;
+            next += 1;
+        }
+    }
+    cells
+        .iter()
+        .filter(|c| nonblank[c.row as usize])
+        .map(|c| Cell {
+            ch: c.ch,
+            rgb: c.rgb,
+            row: row_map[c.row as usize],
+            col: c.col,
+        })
+        .collect()
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

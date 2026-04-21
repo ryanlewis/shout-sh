@@ -49,12 +49,12 @@ describe('buildPath', () => {
 });
 
 describe('buildCurl', () => {
-	it('includes -N for animated output', () => {
+	it('renders the canonical curl command for animated state', () => {
 		const s: UrlState = { ...base, mode: 'rainbow' };
-		expect(buildCurl(s)).toBe('curl -N shout.sh/rainbow/HELLO');
+		expect(buildCurl(s)).toBe('curl shout.sh/rainbow/HELLO');
 	});
 
-	it('omits -N when once is set', () => {
+	it('renders the canonical curl command for once state', () => {
 		const s: UrlState = { ...base, mode: 'rainbow', once: true };
 		expect(buildCurl(s)).toBe('curl shout.sh/rainbow+once/HELLO');
 	});

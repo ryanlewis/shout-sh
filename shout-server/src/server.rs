@@ -65,7 +65,7 @@ async fn app_asset(Path(file): Path<String>) -> Response {
         Some((body, ctype)) => (
             [
                 (header::CONTENT_TYPE, ctype),
-                (header::CACHE_CONTROL, "public, max-age=300"),
+                (header::CACHE_CONTROL, "no-cache"),
             ],
             body,
         )
