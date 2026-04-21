@@ -63,7 +63,11 @@ impl Filter for Rainbow {
             Some(2) => (180.0, 0.25),
             _ => (0.0, 0.6),
         };
-        Some(hsl_to_rgb((base + offset).rem_euclid(360.0), 1.0, lightness))
+        Some(hsl_to_rgb(
+            (base + offset).rem_euclid(360.0),
+            1.0,
+            lightness,
+        ))
     }
 }
 
@@ -99,11 +103,7 @@ impl Filter for Fire {
 /// a slower flicker (frame/3) and a darker base so it reads as char, not
 /// flame. Slot 2 is darker still for 3-slot fonts like chrome.
 fn ember(cell: &Cell, frame: u64, slot: u8) -> Rgb {
-    let base: Rgb = if slot >= 2 {
-        (40, 10, 0)
-    } else {
-        (90, 25, 5)
-    };
+    let base: Rgb = if slot >= 2 { (40, 10, 0) } else { (90, 25, 5) };
     let n = noise(cell.row as u32, cell.col as u32, (frame / 3) as u32);
     let flick = (n as f32 / 255.0 - 0.5) * 24.0; // ±12
     let r = (base.0 as f32 + flick).clamp(0.0, 255.0) as u8;

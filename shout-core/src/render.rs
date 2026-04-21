@@ -126,7 +126,10 @@ fn apply_preset(font_name: &str, preset_name: &str, opts: &mut Options) -> Resul
         while stops.len() < slots {
             stops.push(*stops.last().unwrap());
         }
-        opts.colors = stops.into_iter().map(|s| Colors::Rgb(hex_to_rgb(s))).collect();
+        opts.colors = stops
+            .into_iter()
+            .map(|s| Colors::Rgb(hex_to_rgb(s)))
+            .collect();
     } else {
         let mut stops: Vec<String> = preset.stops.iter().map(|s| (*s).into()).collect();
         if stops.len() < 2 {
@@ -490,7 +493,10 @@ mod tests {
     fn browser_to_sgr_strips_wrapper_and_rewrites_spans() {
         let in_ = "<div style=\"font-family:monospace\"><span style=\"color:#ff00aa\">A█</span><br>\n<span style=\"color:#00aaff\">B</span></div>";
         let got = browser_to_sgr(in_);
-        assert_eq!(got, "\x1b[38;2;255;0;170mA█\x1b[39m\n\x1b[38;2;0;170;255mB\x1b[39m");
+        assert_eq!(
+            got,
+            "\x1b[38;2;255;0;170mA█\x1b[39m\n\x1b[38;2;0;170;255mB\x1b[39m"
+        );
     }
 
     #[test]
