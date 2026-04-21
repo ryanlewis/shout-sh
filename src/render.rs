@@ -5,16 +5,13 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
 
 use cfonts::{Colors, Options, render};
 
 use crate::fonts::resolve;
 use crate::parser::{Mode, RenderConfig};
+use crate::sgr::{self, Cell};
+use crate::shader::{Filter, Rainbow};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderError {
@@ -60,7 +57,9 @@ pub fn is_color(name: &str) -> bool {
     color_enum(name).is_some()
 }
 
-pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
+/// Raw cfonts render as String. For Rainbow mode, renders with a neutral
+/// white base so the shader pipeline can recolor every non-space glyph.
+fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
     if cfg.text.is_empty() {
         return Err(RenderError::EmptyText);
     }
@@ -88,7 +87,10 @@ pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
             opts.colors = vec![color_enum(name).ok_or(RenderError::UnknownColor)?];
         }
         Some(Mode::Rainbow) => {
-            opts.colors = vec![Colors::Candy];
+            // Neutral base; the Rainbow shader recolors per-frame (frame 0
+            // for static output). Borders emit bare and the shader picks
+            // them up via char != ' '.
+            opts.colors = vec![Colors::White];
         }
         Some(Mode::Fire) => {
             // Named-color gradients panic cfonts (see spike-findings); always pass hex.
@@ -98,6 +100,33 @@ pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
     }
 
     Ok(render(opts).text)
+}
+
+/// Parse cfonts output into cells for the streaming pipeline.
+pub fn render_cells(cfg: &RenderConfig) -> Result<Vec<Cell>, RenderError> {
+    Ok(sgr::parse(&render_raw(cfg)?))
+}
+
+/// Apply a filter to a cell grid at frame N and emit the ANSI bytes.
+pub fn emit_shaded<F: Filter>(cells: &[Cell], filter: &F, frame: u64) -> String {
+    let shaded: Vec<Cell> = cells
+        .iter()
+        .map(|c| Cell {
+            ch: c.ch,
+            row: c.row,
+            col: c.col,
+            rgb: filter.shade(c, frame),
+        })
+        .collect();
+    sgr::emit(&shaded)
+}
+
+pub fn render_config(cfg: &RenderConfig) -> Result<String, RenderError> {
+    if matches!(cfg.mode, Some(Mode::Rainbow)) {
+        let cells = render_cells(cfg)?;
+        return Ok(emit_shaded(&cells, &Rainbow, 0));
+    }
+    render_raw(cfg)
 }
 
 pub fn banner() -> String {
@@ -166,12 +195,13 @@ mod tests {
     }
 
     #[test]
-    fn rainbow_mode_renders() {
+    fn rainbow_mode_emits_truecolor_sgr() {
+        // Phase-2: rainbow uses the HSL shader pipeline, which always emits truecolor.
         let cfg = RenderConfig {
             mode: Some(Mode::Rainbow),
             ..base("hi")
         };
-        assert!(!render_config(&cfg).unwrap().is_empty());
+        assert!(render_config(&cfg).unwrap().contains("\x1b[38;2;"));
     }
 
     #[test]
@@ -188,5 +218,16 @@ mod tests {
         assert!(is_color("red"));
         assert!(is_color("cyanbright"));
         assert!(!is_color("puce"));
+    }
+
+    #[test]
+    fn render_cells_returns_non_empty() {
+        let cfg = RenderConfig {
+            mode: Some(Mode::Fire),
+            ..base("hi")
+        };
+        let cells = render_cells(&cfg).unwrap();
+        assert!(!cells.is_empty());
+        assert!(cells.iter().any(|c| c.rgb.is_some()));
     }
 }

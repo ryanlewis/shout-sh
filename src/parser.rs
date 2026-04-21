@@ -16,6 +16,10 @@ use crate::render::is_color;
 
 pub const MAX_TEXT_LEN: usize = 200;
 pub const DEFAULT_FONT: &str = "block";
+pub const DEFAULT_FPS: u32 = 10;
+pub const MAX_FPS: u32 = 30;
+pub const DEFAULT_TIMEOUT: u32 = 60;
+pub const MAX_TIMEOUT: u32 = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -42,6 +46,10 @@ pub struct RenderConfig {
     pub mode: Option<Mode>,
     pub color: String,
     pub json: bool,
+    pub animate: bool,
+    pub once: bool,
+    pub fps: u32,
+    pub timeout: u32,
 }
 
 impl Default for RenderConfig {
@@ -52,7 +60,25 @@ impl Default for RenderConfig {
             mode: None,
             color: String::new(),
             json: false,
+            animate: false,
+            once: false,
+            fps: DEFAULT_FPS,
+            timeout: DEFAULT_TIMEOUT,
         }
+    }
+}
+
+impl RenderConfig {
+    /// Animation is on by default for rainbow/fire; off for solid/bare color.
+    /// `once` and JSON always force static. `animate` overrides the default.
+    pub fn should_animate(&self) -> bool {
+        if self.once || self.json {
+            return false;
+        }
+        if self.animate {
+            return true;
+        }
+        matches!(self.mode, Some(Mode::Rainbow) | Some(Mode::Fire))
     }
 }
 
@@ -101,7 +127,13 @@ fn parse_directives(seg: &str, cfg: &mut RenderConfig) -> bool {
         } else if is_color(&tok) {
             cfg.color = tok;
             matched = true;
-        } else if tok == "animate" || tok == "once" || is_layout(&tok) {
+        } else if tok == "animate" {
+            cfg.animate = true;
+            matched = true;
+        } else if tok == "once" {
+            cfg.once = true;
+            matched = true;
+        } else if is_layout(&tok) {
             matched = true;
         } else if let Some(rest) = tok.strip_prefix('w')
             && !rest.is_empty()
@@ -124,7 +156,13 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
             continue;
         }
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        // Valueless flags: ?animate, ?once.
         if v.is_empty() {
+            match k {
+                "animate" => cfg.animate = true,
+                "once" => cfg.once = true,
+                _ => {}
+            }
             continue;
         }
         let v = v.to_lowercase();
@@ -133,8 +171,30 @@ fn apply_query(query: &str, cfg: &mut RenderConfig) {
             "mode" => cfg.mode = Mode::from_token(&v).or(cfg.mode),
             "color" => cfg.color = v,
             "format" => cfg.json = v == "json",
+            "fps" => {
+                if let Ok(n) = v.parse::<u32>() {
+                    cfg.fps = clamp_fps(n);
+                }
+            }
+            "timeout" => {
+                if let Ok(n) = v.parse::<u32>() {
+                    cfg.timeout = clamp_timeout(n);
+                }
+            }
             _ => {}
         }
+    }
+}
+
+fn clamp_fps(n: u32) -> u32 {
+    if n == 0 { DEFAULT_FPS } else { n.min(MAX_FPS) }
+}
+
+fn clamp_timeout(n: u32) -> u32 {
+    if n == 0 {
+        DEFAULT_TIMEOUT
+    } else {
+        n.min(MAX_TIMEOUT)
     }
 }
 
@@ -213,13 +273,27 @@ mod tests {
     }
 
     #[test]
-    fn animate_flag_matches_but_is_ignored() {
-        assert_eq!(parse("/animate/Hi", None), text("Hi"));
+    fn animate_flag_sets_bool() {
+        assert_eq!(
+            parse("/animate/Hi", None),
+            RenderConfig {
+                animate: true,
+                text: "Hi".into(),
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
-    fn once_flag_matches_but_is_ignored() {
-        assert_eq!(parse("/once/Hi", None), text("Hi"));
+    fn once_flag_sets_bool() {
+        assert_eq!(
+            parse("/once/Hi", None),
+            RenderConfig {
+                once: true,
+                text: "Hi".into(),
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -228,6 +302,7 @@ mod tests {
             parse("/rainbow+once/Hi", None),
             RenderConfig {
                 mode: Some(Mode::Rainbow),
+                once: true,
                 text: "Hi".into(),
                 ..Default::default()
             }
@@ -255,6 +330,7 @@ mod tests {
             RenderConfig {
                 font: "tiny".into(),
                 mode: Some(Mode::Rainbow),
+                animate: true,
                 text: "Hello World".into(),
                 ..Default::default()
             }
@@ -343,5 +419,79 @@ mod tests {
     #[test]
     fn default_font_is_block() {
         assert_eq!(parse("/Hi", None).font, "block");
+    }
+
+    #[test]
+    fn default_fps_and_timeout() {
+        let cfg = parse("/Hi", None);
+        assert_eq!(cfg.fps, DEFAULT_FPS);
+        assert_eq!(cfg.timeout, DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn fps_clamped_to_max() {
+        assert_eq!(parse("/Hi", Some("fps=9999")).fps, MAX_FPS);
+    }
+
+    #[test]
+    fn fps_zero_falls_back_to_default() {
+        assert_eq!(parse("/Hi", Some("fps=0")).fps, DEFAULT_FPS);
+    }
+
+    #[test]
+    fn fps_custom_accepted() {
+        assert_eq!(parse("/Hi", Some("fps=20")).fps, 20);
+    }
+
+    #[test]
+    fn timeout_clamped_to_max() {
+        assert_eq!(parse("/Hi", Some("timeout=9999")).timeout, MAX_TIMEOUT);
+    }
+
+    #[test]
+    fn timeout_zero_falls_back_to_default() {
+        assert_eq!(parse("/Hi", Some("timeout=0")).timeout, DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn query_animate_valueless() {
+        assert!(parse("/Hi", Some("animate")).animate);
+    }
+
+    #[test]
+    fn query_once_valueless() {
+        assert!(parse("/Hi", Some("once")).once);
+    }
+
+    #[test]
+    fn should_animate_rainbow_default() {
+        assert!(parse("/rainbow/Hi", None).should_animate());
+    }
+
+    #[test]
+    fn should_animate_fire_default() {
+        assert!(parse("/fire/Hi", None).should_animate());
+    }
+
+    #[test]
+    fn should_not_animate_solid_default() {
+        assert!(!parse("/solid/Hi", None).should_animate());
+        assert!(!parse("/red/Hi", None).should_animate());
+        assert!(!parse("/Hi", None).should_animate());
+    }
+
+    #[test]
+    fn once_forces_static() {
+        assert!(!parse("/rainbow+once/Hi", None).should_animate());
+    }
+
+    #[test]
+    fn json_forces_static() {
+        assert!(!parse("/rainbow/Hi", Some("format=json")).should_animate());
+    }
+
+    #[test]
+    fn animate_overrides_default() {
+        assert!(parse("/solid+animate/Hi", None).should_animate());
     }
 }

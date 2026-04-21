@@ -6,10 +6,11 @@ a tiny http server that renders stylized ascii banners over `curl`.
 $ curl shout.sh/HELLO
 $ curl shout.sh/tiny/hello+world
 $ curl shout.sh/red/alert
-$ curl shout.sh/fire/boom
+$ curl -N shout.sh/fire/boom
 ```
 
-phase 1 is static. phase 2 will add animation.
+`rainbow` and `fire` animate by default. pass `-N` to curl so your terminal
+doesn't buffer the stream.
 
 ## usage
 
@@ -54,22 +55,44 @@ available: `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `white`,
 ### modes
 
 ```
-$ curl shout.sh/solid/hi       # solid white (or pair with a color)
-$ curl shout.sh/rainbow/hi     # per-char bright palette
-$ curl shout.sh/fire/hi        # red -> orange -> yellow gradient
+$ curl shout.sh/solid/hi          # solid white (or pair with a color)
+$ curl -N shout.sh/rainbow/hi     # animated hsl hue ring
+$ curl -N shout.sh/fire/hi        # animated red/orange/yellow flicker
 ```
 
-dynamic modes are not animated in phase 1. they will be in phase 2.
+solid and bare colors never animate. rainbow and fire animate by default —
+add `once` to force a static frame.
+
+### animation
+
+```
+$ curl -N shout.sh/rainbow/hi
+$ curl -N 'shout.sh/fire/boom?fps=20&timeout=30'
+$ curl shout.sh/rainbow+once/hi       # single static frame
+$ curl -N shout.sh/solid+animate/ok   # stream a still frame (pointless, works)
+```
+
+- `animate` — force animation on any mode.
+- `once` — force a single static frame.
+- `?fps=N` — frames per second. default 10, capped at 30.
+- `?timeout=N` — seconds before the server closes the stream. default 60,
+  capped at 300.
+
+browsers (detected by `Accept: text/html` or `User-Agent: Mozilla/*`) are
+sent a single static frame — a hung tab is not a good time.
 
 ### query params
 
 ```
-$ curl 'shout.sh/hi?font=tiny&mode=fire'
+$ curl 'shout.sh/hi?font=tiny&mode=fire&once'
 $ curl 'shout.sh/HELLO?format=json'
 ```
 
-supported: `font`, `mode`, `color`, `format`. query params override path
-directives.
+supported: `font`, `mode`, `color`, `format`, `animate`, `once`, `fps`,
+`timeout`. query params override path directives.
+
+`format=json` always returns a single static frame — json and animation
+don't mix.
 
 ## endpoints
 
@@ -103,3 +126,16 @@ built with [cfonts] (gpl-3.0-or-later). linking cfonts in-process makes the
 combined work gpl-3 — fine for this project.
 
 [cfonts]: https://github.com/dominikwilkowski/cfonts
+
+## changes
+
+### phase 2 → animation
+
+- `rainbow` and `fire` now animate by default (use `once` to opt out).
+- `rainbow`'s base palette changed from cfonts' per-char `candy` random
+  palette to a stable hsl hue ring. `curl shout.sh/rainbow/hi` produces
+  different colors than phase 1 did. the new base makes animation possible
+  and looks like a rainbow.
+- new directives: `animate`, `once`. new query params: `?fps=N`,
+  `?timeout=N`.
+- browsers are auto-opted out of streams.

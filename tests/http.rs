@@ -93,8 +93,9 @@ async fn red_tiny_hello_emits_red_sgr() {
 }
 
 #[tokio::test]
-async fn fire_emits_truecolor_sgr() {
-    let (status, _, body) = get("/fire/ALERT").await;
+async fn fire_once_emits_truecolor_sgr() {
+    // Without `once`, /fire/ALERT streams — phase-2 default-animate for fire.
+    let (status, _, body) = get("/fire+once/ALERT").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("\x1b[38;2;"), "expected truecolor SGR");
 }
@@ -111,11 +112,15 @@ async fn json_format_returns_json() {
 }
 
 #[tokio::test]
-async fn rainbow_end_to_end() {
-    let (status, _, body) = get("/rainbow/party").await;
+async fn rainbow_once_end_to_end() {
+    // Phase-2: rainbow animates by default; `once` forces a static frame.
+    let (status, _, body) = get("/rainbow+once/party").await;
     assert_eq!(status, StatusCode::OK);
-    // Candy emits SGR color codes per char.
-    assert!(body.contains("\x1b["), "expected SGR in rainbow output");
+    // HSL shader emits truecolor SGR.
+    assert!(
+        body.contains("\x1b[38;2;"),
+        "expected truecolor SGR in rainbow output"
+    );
 }
 
 #[tokio::test]
@@ -139,7 +144,8 @@ async fn query_font_overrides_path_font_over_http() {
 #[tokio::test]
 async fn query_mode_overrides_path_mode_over_http() {
     // path says solid (no SGR truecolor), query flips to fire (truecolor).
-    let (status, _, body) = get("/solid/hi?mode=fire").await;
+    // Append `&once` so the assertion reads a single static frame.
+    let (status, _, body) = get("/solid+once/hi?mode=fire").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("\x1b[38;2;"),

@@ -15,5 +15,7 @@ pub mod fonts;
 pub mod parser;
 pub mod render;
 mod server;
+pub mod sgr;
+pub mod shader;
 
 pub use server::{app, help_text};
