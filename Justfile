@@ -28,10 +28,24 @@ web-build: wasm-build
     cp shout-wasm/pkg/shout_wasm_bg.wasm.d.ts web/src/wasm-pkg/
     cd web && pnpm install --frozen-lockfile && pnpm build
 
-# Watch-mode dev server for the TS client. The Rust server in debug mode
-# proxies /_app/* and / to this port — see shout-server/src/server.rs.
+# Watch-mode esbuild for the TS client. Rewrites web/dist/ on each change;
+# on its own it does NOT serve anything. Use `just dev` for the full loop.
 web-dev:
     cd web && pnpm dev
+
+# Run everything needed for local dev: esbuild in watch mode alongside the
+# Rust server. Ctrl-C stops both. Server assets are `include_bytes!`'d from
+# web/dist/, so to pick up a frontend change restart the server (the build
+# script's rerun-if-changed on ../web/dist triggers a fast rebuild).
+dev: wasm-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT INT TERM
+    (cd web && pnpm dev) &
+    # Give esbuild a moment to produce the first dist/ so the server build
+    # script doesn't trip its missing-asset gate on the first `cargo run`.
+    while [ ! -f web/dist/index.html ] || [ ! -f web/dist/main.css ] || [ ! -f web/dist/main.js ] || [ ! -f web/dist/og.png ]; do sleep 0.1; done
+    cargo run -p shout-server
 
 # Full CI: rebuild web assets, then run lints + tests + release build.
 ci: web-build lint test

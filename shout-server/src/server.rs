@@ -38,21 +38,29 @@ pub fn app() -> Router {
         .route("/", get(root))
         .route("/health", get(health))
         .route("/favicon.ico", get(favicon))
+        .route("/favicon.svg", get(favicon_svg))
+        .route("/og.png", get(og_image))
         .route("/fonts", get(fonts_list))
         .route("/fonts/{name}", get(font_preview))
         .route("/presets", get(presets_list))
         .route("/presets/{name}", get(preset_preview))
         .route("/_app/{file}", get(app_asset))
+        .route("/privacy", get(privacy))
+        .route("/about", get(about))
         .fallback(render_fallback)
 }
 
 /// Embedded playground assets. Keep this list in sync with web/dist/.
 /// Anything here is served at `/_app/{file}` with its matching MIME.
 const ASSET_INDEX_HTML: &[u8] = include_bytes!("../../web/dist/index.html");
+const ASSET_PRIVACY_HTML: &[u8] = include_bytes!("../../web/dist/privacy.html");
+const ASSET_ABOUT_HTML: &[u8] = include_bytes!("../../web/dist/about.html");
 const ASSET_MAIN_JS: &[u8] = include_bytes!("../../web/dist/main.js");
 const ASSET_MAIN_CSS: &[u8] = include_bytes!("../../web/dist/main.css");
 const ASSET_WASM_JS: &[u8] = include_bytes!("../../web/dist/shout_wasm.js");
 const ASSET_WASM_BG: &[u8] = include_bytes!("../../web/dist/shout_wasm_bg.wasm");
+const ASSET_FAVICON_SVG: &[u8] = include_bytes!("../../web/dist/favicon.svg");
+const ASSET_OG_PNG: &[u8] = include_bytes!("../../web/dist/og.png");
 
 fn asset_for(name: &str) -> Option<(&'static [u8], &'static str)> {
     Some(match name {
@@ -126,8 +134,46 @@ async fn health() -> Response {
     plain("ok\n")
 }
 
+async fn privacy() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        ASSET_PRIVACY_HTML,
+    )
+        .into_response()
+}
+
+async fn about() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        ASSET_ABOUT_HTML,
+    )
+        .into_response()
+}
+
 async fn favicon() -> Response {
     StatusCode::NO_CONTENT.into_response()
+}
+
+async fn favicon_svg() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        ASSET_FAVICON_SVG,
+    )
+        .into_response()
+}
+
+async fn og_image() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        ASSET_OG_PNG,
+    )
+        .into_response()
 }
 
 async fn fonts_list() -> Response {

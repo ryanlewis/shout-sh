@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>about — shout.sh</title>
+		<meta name="description" content="About shout.sh — a tiny HTTP service that renders stylized ANSI banners over curl." />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://shout.sh/about" />
+		<meta property="og:title" content="about — shout.sh" />
+		<meta property="og:description" content="A tiny HTTP service that renders stylized ANSI banners over curl." />
+		<meta property="og:image" content="https://shout.sh/og.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="about — shout.sh" />
+		<meta name="twitter:description" content="A tiny HTTP service that renders stylized ANSI banners over curl." />
+		<meta name="twitter:image" content="https://shout.sh/og.png" />
+		<link rel="stylesheet" href="/_app/main.css" />
+		<script defer src="https://analytics.rlew.io/script.js" data-website-id="262c65da-7557-48e8-b1ea-6638d3bb6f8c"></script>
+	</head>
+	<body>
+		<div id="app">
+			<div class="container">
+				<header class="masthead">
+					<pre class="masthead__art" aria-label="shout.sh about">$ cat ABOUT.txt</pre>
+				</header>
+
+				<section class="doc">
+					<h2>what is this</h2>
+					<p>
+						shout.sh is a tiny HTTP service that renders stylized ANSI banners
+						over <code>curl</code>. Everything lives in the URL path — no flags,
+						no config, no client to install.
+					</p>
+					<p>
+						<code>curl shout.sh/HELLO</code> prints a banner.
+						<code>curl shout.sh/rainbow/HELLO</code> prints an animated one. The
+						web playground at shout.sh renders the same output locally via a
+						WebAssembly build of the pipeline, so you can dial in the URL before
+						pasting it into a terminal.
+					</p>
+
+					<h2>built on cfonts</h2>
+					<p>
+						The letterforms come from
+						<a href="https://github.com/dominikwilkowski/cfonts">cfonts</a> by
+						Dominik Wilkowski - an awesome little library.
+					</p>
+					<p>Because cfonts is GPL-3, shout.sh is too.</p>
+
+					<h2>source</h2>
+					<p>
+						Code, issues, and releases live on GitHub:
+						<a href="https://github.com/ryanlewis/shout-sh"
+							>github.com/ryanlewis/shout-sh</a
+						>.
+					</p>
+
+					<h2>contact</h2>
+					<p>
+						ryan [at] rlew [dot] io — or open an issue on the repo.
+					</p>
+				</section>
+
+				<footer class="foot">
+					<p class="muted"><a href="/">back to playground</a></p>
+				</footer>
+			</div>
+		</div>
+	</body>
+</html>

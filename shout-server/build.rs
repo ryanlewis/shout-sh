@@ -14,10 +14,14 @@ fn main() {
 
     let required = [
         "index.html",
+        "about.html",
+        "privacy.html",
         "main.js",
         "main.css",
         "shout_wasm.js",
         "shout_wasm_bg.wasm",
+        "favicon.svg",
+        "og.png",
     ];
     let missing: Vec<&str> = required
         .iter()

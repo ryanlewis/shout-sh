@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>privacy — shout.sh</title>
+		<meta name="description" content="Privacy policy for shout.sh." />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://shout.sh/privacy" />
+		<meta property="og:title" content="privacy — shout.sh" />
+		<meta property="og:description" content="Privacy policy for shout.sh." />
+		<meta property="og:image" content="https://shout.sh/og.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="privacy — shout.sh" />
+		<meta name="twitter:description" content="Privacy policy for shout.sh." />
+		<meta name="twitter:image" content="https://shout.sh/og.png" />
+		<link rel="stylesheet" href="/_app/main.css" />
+		<script defer src="https://analytics.rlew.io/script.js" data-website-id="262c65da-7557-48e8-b1ea-6638d3bb6f8c"></script>
+	</head>
+	<body>
+		<div id="app">
+			<div class="container">
+				<header class="masthead">
+					<pre class="masthead__art" aria-label="shout.sh privacy">$ cat PRIVACY.txt</pre>
+				</header>
+
+				<section class="doc">
+					<h2>what we collect</h2>
+					<p>
+						Nothing personal. There's no signup, no account, no cookie, no
+						localStorage. shout.sh doesn't remember you between visits.
+					</p>
+					<p>
+						The text you type into the playground never leaves your browser — the
+						banner you see is rendered locally by a WebAssembly build of the same
+						pipeline the server uses. Typing in the box doesn't hit the network.
+					</p>
+					<p>
+						When you actually <code>curl shout.sh/...</code>, the text you want
+						rendered is part of the request URL — it has to be, that's how curl
+						works. The server renders it and discards it. We don't persist request
+						URLs or bodies beyond the short-lived access logs our host keeps for
+						abuse prevention.
+					</p>
+
+					<h2>analytics</h2>
+					<p>
+						The web playground at shout.sh runs a self-hosted instance of Umami at
+						<a href="https://analytics.rlew.io">analytics.rlew.io</a> to count page
+						views and see which controls get used — font picks, palette picks,
+						copy-to-clipboard clicks, that sort of thing. Umami does not set
+						cookies, does not follow you across sites, and does not build a profile
+						of you.
+					</p>
+					<p>
+						The only data recorded per visit is the page URL, the referring URL,
+						your device type, browser, OS, and a one-way-hashed identifier derived
+						from your IP that resets daily. Your raw IP address is never written to
+						disk.
+					</p>
+					<p>
+						Command-line <code>curl</code> calls to shout.sh do not hit Umami — no
+						JavaScript runs there. Only the web playground is instrumented.
+					</p>
+
+					<h2>third parties</h2>
+					<p>
+						No ads, no remarketing, no affiliate trackers. No Google Analytics, no
+						Facebook Pixel, nothing like that. The only outbound requests the page
+						makes beyond shout.sh itself are to analytics.rlew.io and Google Fonts
+						(for the JetBrains Mono webfont).
+					</p>
+
+					<h2>contact</h2>
+					<p>
+						Questions, corrections, or takedown requests: ryan [at] rlew [dot] io.
+					</p>
+				</section>
+
+				<footer class="foot">
+					<p class="muted"><a href="/">back to playground</a></p>
+				</footer>
+			</div>
+		</div>
+	</body>
+</html>
