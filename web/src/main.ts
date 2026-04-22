@@ -72,7 +72,7 @@ async function main(): Promise<void> {
 
 	const push = (state: UrlState): void => {
 		const cfg: PlaygroundCfg = {
-			text: state.text || 'HELLO',
+			text: state.text || 'hello|world',
 			font: state.font,
 			mode: state.mode,
 			color: state.color,
