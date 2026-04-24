@@ -25,6 +25,8 @@ use shout_core::render::{RenderError, banner, emit_shaded, render_cells, render_
 use shout_core::sgr::{self, Cell, ansi};
 use shout_core::shader::{Filter, Fire, Identity, Rainbow};
 
+use crate::metrics;
+
 /// Help text is built once at startup; every `GET /` serves the same bytes.
 static HELP: LazyLock<String> = LazyLock::new(build_help_text);
 
@@ -34,6 +36,7 @@ static FONTS_BODY: LazyLock<String> = LazyLock::new(|| format!("{}\n", fonts::li
 static PRESETS_BODY: LazyLock<String> = LazyLock::new(|| format!("{}\n", presets::list_newline()));
 
 pub fn app() -> Router {
+    metrics::init();
     Router::new()
         .route("/", get(root))
         .route("/health", get(health))
@@ -48,6 +51,7 @@ pub fn app() -> Router {
         .route("/privacy", get(privacy))
         .route("/about", get(about))
         .fallback(render_fallback)
+        .layer(axum::middleware::from_fn(metrics::track))
 }
 
 /// Embedded playground assets. Keep this list in sync with web/dist/.
@@ -99,6 +103,7 @@ fn plain<S: Into<String>>(body: S) -> Response {
 }
 
 fn error_response(err: RenderError) -> Response {
+    metrics::record_error(&err);
     let status = match err {
         RenderError::EmptyText => StatusCode::OK,
         _ => StatusCode::BAD_REQUEST,
@@ -268,6 +273,7 @@ async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
 fn static_response(cfg: &RenderConfig) -> Response {
     match render_config(cfg) {
         Ok(out) if cfg.json => {
+            metrics::record_render(metrics::RenderKind::Json, cfg);
             let body = serde_json::json!({
                 "text": cfg.text,
                 "font": cfg.font,
@@ -279,7 +285,10 @@ fn static_response(cfg: &RenderConfig) -> Response {
             )
                 .into_response()
         }
-        Ok(out) => plain(out),
+        Ok(out) => {
+            metrics::record_render(metrics::RenderKind::Static, cfg);
+            plain(out)
+        }
         Err(e) => error_response(e),
     }
 }
@@ -288,6 +297,7 @@ fn animated_response(cfg: &RenderConfig) -> Result<Response, RenderError> {
     let cells = render_cells(cfg)?;
     let rows = sgr::row_count(&cells);
     let shader = Shader::for_mode(cfg.mode.unwrap_or(Mode::Solid), rows);
+    metrics::record_render(metrics::RenderKind::Animated, cfg);
     let stream = build_stream(cells, rows, shader, cfg.fps, cfg.timeout);
 
     Ok(Response::builder()
@@ -335,11 +345,13 @@ fn build_stream(
     timeout: u32,
 ) -> impl futures_core::Stream<Item = Result<String, Infallible>> {
     stream! {
+        let _guard = metrics::StreamGuard::new();
         let first = format!(
             "{}{}{}{}",
             ansi::HIDE_CURSOR, ansi::CLEAR_SCREEN, ansi::CURSOR_HOME,
             emit_shaded(&cells, &shader, 0),
         );
+        metrics::record_frame();
         yield Ok(first);
 
         // \x1b[0A is invalid; skip cursor-up if the banner had no rows.
@@ -362,6 +374,7 @@ fn build_stream(
             tokio::select! {
                 _ = &mut deadline => break,
                 _ = iv.tick() => {
+                    metrics::record_frame();
                     yield Ok(format!("{up}{}", emit_shaded(&cells, &shader, frame)));
                     frame += 1;
                 }

@@ -28,6 +28,33 @@ async fn main() {
         }
     };
     eprintln!("shout.sh listening on {addr}");
+
+    // If METRICS_ADDR is set, serve /__metrics on a second listener bound
+    // to that address only. Production ties this to the Tailscale IP so
+    // public ingress cannot reach the metrics endpoint.
+    if let Ok(metrics_addr) = std::env::var("METRICS_ADDR") {
+        match metrics_addr.parse::<SocketAddr>() {
+            Ok(ma) => match tokio::net::TcpListener::bind(ma).await {
+                Ok(ml) => {
+                    eprintln!("shout.sh metrics listening on {ma}");
+                    tokio::spawn(async move {
+                        if let Err(e) = axum::serve(ml, shout_server::metrics_app()).await {
+                            eprintln!("metrics serve error: {e}");
+                        }
+                    });
+                }
+                Err(e) => {
+                    eprintln!("bind metrics {ma} failed: {e}");
+                    std::process::exit(1);
+                }
+            },
+            Err(e) => {
+                eprintln!("METRICS_ADDR={metrics_addr} invalid: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     if let Err(e) = axum::serve(listener, shout_server::app()).await {
         eprintln!("serve error: {e}");
         std::process::exit(1);

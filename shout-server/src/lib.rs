@@ -6,6 +6,8 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
+mod metrics;
 mod server;
 
+pub use metrics::metrics_app;
 pub use server::{app, help_text};
