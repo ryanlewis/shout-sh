@@ -11,6 +11,7 @@ import { mountCurlSnippet } from './ui/CurlSnippet.js';
 import { mountShouter } from './ui/Shouter.js';
 import { mountBlockCaret } from './ui/BlockCaret.js';
 import { mountAdvanced, BG_CSS } from './ui/Advanced.js';
+import { track } from './analytics.js';
 
 const WASM_URL = '/_app/shout_wasm_bg.wasm';
 
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
 		frame.classList.remove('loading');
 		frame.textContent =
 			`playground unavailable (${String(e)})\n` + `try: curl shout.sh/rainbow/HELLO`;
+		track('wasm_failed', { error: String(e) });
 		return;
 	}
 
@@ -55,20 +57,18 @@ async function main(): Promise<void> {
 	frame.parentElement?.removeAttribute('aria-busy');
 	const preview = new Preview({ wasm, target: frame });
 
-	const masthead = document.querySelector<HTMLElement>('#masthead-art');
-	if (masthead) {
-		const fonts = ['block', 'tiny', 'chrome'] as const;
-		const font = fonts[Math.floor(Math.random() * fonts.length)]!;
-		masthead.innerHTML = wasm.renderOnce({
-			text: 'shout.sh',
-			font,
-			mode: 'solid',
-			color: '',
-			preset: '',
-		});
-	}
-
-	const renderCurl = mountCurlSnippet({ display: curlOut, button: copyBtn, log });
+	const renderCurl = mountCurlSnippet({
+		display: curlOut,
+		button: copyBtn,
+		log,
+		onCopy: (state) =>
+			track('copy_curl', {
+				font: state.font,
+				preset: state.preset,
+				mode: state.mode,
+				once: state.once,
+			}),
+	});
 
 	const push = (state: UrlState): void => {
 		const cfg: PlaygroundCfg = {
@@ -109,10 +109,14 @@ async function main(): Promise<void> {
 		onChange: push,
 	});
 
-	mountFontPicker(fontRoot, 'block', (font: FontName) => shouter.setFont(font));
-	const presetPicker = mountPresetPicker(presetRoot, '', (preset: PresetName) =>
-		shouter.setPreset(preset),
-	);
+	mountFontPicker(fontRoot, 'block', (font: FontName) => {
+		shouter.setFont(font);
+		track('font_change', { font });
+	});
+	const presetPicker = mountPresetPicker(presetRoot, '', (preset: PresetName) => {
+		shouter.setPreset(preset);
+		track('preset_change', { preset: preset || 'none' });
+	});
 	mountControls({
 		modeRoot,
 		onceCheckbox: onceCb,
@@ -123,10 +127,25 @@ async function main(): Promise<void> {
 			// Rainbow/fire override preset at render time; grey out the picker
 			// so it's visually clear the palette isn't doing anything.
 			presetPicker.setDisabled(mode !== 'solid');
+			track('mode_change', { mode });
 		},
-		onOnceChange: (once) => shouter.setOnce(once),
+		onOnceChange: (once) => {
+			shouter.setOnce(once);
+			track('once_toggle', { once });
+		},
 		onFpsChange: (fps) => shouter.setFps(fps),
 	});
+
+	const advDetails = document.querySelector<HTMLDetailsElement>('details.adv');
+	if (advDetails) {
+		let firedOpen = false;
+		advDetails.addEventListener('toggle', () => {
+			if (advDetails.open && !firedOpen) {
+				firedOpen = true;
+				track('advanced_open');
+			}
+		});
+	}
 	mountAdvanced({
 		letterSpacingInput: lsIn,
 		letterSpacingValue: lsVal,

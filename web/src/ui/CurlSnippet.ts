@@ -7,20 +7,26 @@ export interface CurlSnippetOpts {
 	display: HTMLElement;
 	button: HTMLButtonElement;
 	log: HTMLElement;
+	onCopy?: (state: UrlState) => void;
 }
 
 export function mountCurlSnippet(opts: CurlSnippetOpts): (state: UrlState) => void {
 	let current = '';
+	let currentState: UrlState | null = null;
 
 	opts.button.addEventListener('click', () => {
 		void navigator.clipboard
 			?.writeText(current)
-			.then(() => appendLog(opts.log, `[OK] copied: ${current}`))
+			.then(() => {
+				appendLog(opts.log, `[OK] copied: ${current}`);
+				if (currentState) opts.onCopy?.(currentState);
+			})
 			.catch((e: unknown) => appendLog(opts.log, `[ERR] copy failed: ${String(e)}`));
 	});
 
 	return (state: UrlState) => {
 		current = buildCurl(state);
+		currentState = state;
 		opts.display.textContent = current;
 	};
 }

@@ -21,6 +21,16 @@
 	box-sizing: border-box;
 }
 
+/* Kill the 300ms tap delay and iOS double-tap-to-zoom on interactive bits. */
+button,
+label,
+summary,
+input[type='range'],
+input[type='checkbox'],
+select {
+	touch-action: manipulation;
+}
+
 html,
 body {
 	margin: 0;
@@ -46,13 +56,12 @@ body {
 }
 .masthead__art {
 	font-family: var(--font-ascii);
-	font-size: 12px;
+	font-size: 14px;
 	line-height: 1;
 	letter-spacing: 0;
 	white-space: pre;
 	margin: 0;
 	color: var(--fg);
-	overflow-x: auto;
 }
 
 .playground {
@@ -100,8 +109,14 @@ body {
 	animation: blink var(--blink) steps(1, end) infinite;
 }
 @keyframes blink {
-	0%, 49% { opacity: 1; }
-	50%, 100% { opacity: 0; }
+	0%,
+	49% {
+		opacity: 1;
+	}
+	50%,
+	100% {
+		opacity: 0;
+	}
 }
 
 .controls {
@@ -245,8 +260,12 @@ body {
 	text-transform: uppercase;
 	user-select: none;
 }
-.adv__summary::-webkit-details-marker { display: none; }
-.adv__summary:hover { color: var(--fg); }
+.adv__summary::-webkit-details-marker {
+	display: none;
+}
+.adv__summary:hover {
+	color: var(--fg);
+}
 .adv__caret {
 	color: var(--fg-3);
 	margin-right: 4px;
@@ -281,7 +300,10 @@ body {
 	background: var(--bg-1);
 	text-align: right;
 }
-.num-in:focus-visible { outline: 1px dashed var(--fg); outline-offset: -3px; }
+.num-in:focus-visible {
+	outline: 1px dashed var(--fg);
+	outline-offset: -3px;
+}
 .select-in {
 	all: unset;
 	border: 1px solid var(--rule);
@@ -292,7 +314,10 @@ body {
 	background: var(--bg-1);
 	cursor: pointer;
 }
-.select-in:focus-visible { outline: 1px dashed var(--fg); outline-offset: -3px; }
+.select-in:focus-visible {
+	outline: 1px dashed var(--fg);
+	outline-offset: -3px;
+}
 .hint {
 	color: var(--fg-3);
 	font-size: 12px;
@@ -313,6 +338,11 @@ body {
 	margin: 0 0 12px;
 	white-space: nowrap;
 	overflow-x: auto;
+	/* Soft fade at the right edge so an overflowing URL signals "there's
+	   more" instead of looking like a chopped-off render bug. The mask is
+	   a no-op when content fits (it ends before the fade zone). */
+	-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+	mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 /* The ps span is non-selectable so double-click on the command span
    highlights only the curl command — not the prompt. */
@@ -381,4 +411,141 @@ body {
 .muted {
 	color: var(--fg-2);
 	font-size: 13px;
+}
+.muted a {
+	color: inherit;
+}
+
+.doc {
+	margin-top: 24px;
+	max-width: 72ch;
+}
+.doc h2 {
+	color: var(--fg-2);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	margin: 28px 0 8px;
+	padding-bottom: 6px;
+	border-bottom: 1px dashed var(--rule);
+}
+.doc h2:first-child {
+	margin-top: 0;
+}
+.doc p {
+	color: var(--fg-1);
+	margin: 10px 0;
+}
+.doc a {
+	color: var(--fg);
+}
+.doc code {
+	color: var(--fg);
+}
+
+/* Mobile (tablet + large phones): let the too-wide font chips row wrap,
+   and tame the prompt-line sizing so "$ curl shout.sh/" + input doesn't
+   blow past the viewport. */
+@media (max-width: 720px) {
+	.container {
+		padding: 20px 14px;
+	}
+	.prompt-line {
+		font-size: 16px;
+		gap: 6px;
+	}
+	.ps1 {
+		font-size: 13px;
+	}
+	.text-in {
+		/* >=16px avoids iOS Safari's focus-zoom. */
+		font-size: 20px;
+		min-width: 3ch;
+	}
+	.controls {
+		gap: 12px 14px;
+	}
+	/* Each labelled group owns its own row so the label never gets orphaned
+	   above a wrapped chip group. */
+	.controls > .opt {
+		flex: 1 1 100%;
+	}
+	/* On mobile, the chip row wraps onto multiple lines. The desktop design
+	   (single outer border + vertical dividers between chips) breaks down
+	   when wrapped — rows get stranded without top/bottom borders. Drop the
+	   outer border, space chips with gap, and give each chip its own box. */
+	.chips {
+		flex-wrap: wrap;
+		gap: 6px;
+		border: 0;
+	}
+	.chips button {
+		padding: 6px 12px;
+		font-size: 14px;
+		border: 1px solid var(--rule);
+	}
+	.chips button:last-child {
+		border-right: 1px solid var(--rule);
+	}
+	.opt--fps input[type='range'],
+	.opt--num input[type='range'] {
+		flex: 1;
+		min-width: 120px;
+		width: auto;
+	}
+	/* Keep native form controls at >=16px to block iOS focus-zoom. */
+	.num-in,
+	.select-in {
+		font-size: 16px;
+	}
+	/* Wrap the curl snippet so the [ copy ] button drops to its own line
+	   below the (long, overflowing) prompt. Row gap gives breathing room
+	   between the URL and the button; `padding-left: 0` on the button
+	   makes its `[` align flush with the prompt's first char. */
+	.curl {
+		font-size: 12px;
+		gap: 8px;
+		padding: 8px 10px;
+		flex-wrap: wrap;
+	}
+	.curl .prompt {
+		flex: 1 1 100%;
+	}
+	.btn-ascii {
+		padding-left: 0;
+	}
+	.frame {
+		padding: 12px 14px;
+	}
+	.shout-frame {
+		font-size: 12px;
+	}
+	.adv__body {
+		gap: 12px 14px;
+	}
+	.adv__body > .opt {
+		flex: 1 1 100%;
+	}
+}
+
+/* Small phones: the prompt line risks cramping at ~360px. Shrink the
+   static prefix aggressively, scale the masthead art, and let the curl
+   snippet drop the copy button onto its own line if it needs to. */
+@media (max-width: 420px) {
+	.container {
+		padding: 16px 12px;
+	}
+	.prompt-line {
+		gap: 4px;
+	}
+	.ps1 {
+		font-size: 12px;
+	}
+	.text-in {
+		font-size: 18px;
+	}
+	.shout-frame {
+		font-size: 11px;
+	}
 }
