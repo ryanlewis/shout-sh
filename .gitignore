@@ -18,6 +18,11 @@
 *~
 *.bak
 
+# Claude Code (local/personal state — commands/ is shared)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/launch.json
+
 # Environment
 .env
 .env.local
