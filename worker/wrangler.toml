@@ -1,0 +1,8 @@
+name = "shout-sh-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-04-01"
+
+routes = [
+  { pattern = "shout.sh/*", zone_name = "shout.sh" },
+  { pattern = "www.shout.sh/*", zone_name = "shout.sh" },
+]
