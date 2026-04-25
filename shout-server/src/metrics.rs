@@ -27,6 +27,8 @@ use prometheus::{
     register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
     register_int_counter_with_registry, register_int_gauge_with_registry,
 };
+#[cfg(target_os = "linux")]
+use prometheus::process_collector::ProcessCollector;
 
 use shout_core::fonts;
 use shout_core::parser::{Mode, RenderConfig};
@@ -139,6 +141,13 @@ pub fn init() {
     LazyLock::force(&FONT_REQUESTS);
     LazyLock::force(&PRESET_REQUESTS);
     LazyLock::force(&BUILD_INFO);
+    // Process-level metrics: process_cpu_seconds_total,
+    // process_resident_memory_bytes, process_open_fds, process_threads, …
+    // The collector reads /proc, so it's Linux-only.
+    #[cfg(target_os = "linux")]
+    REGISTRY
+        .register(Box::new(ProcessCollector::for_self()))
+        .expect("register process collector");
 }
 
 #[derive(Copy, Clone)]
