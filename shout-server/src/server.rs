@@ -238,10 +238,8 @@ async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
             .into_response();
     }
     let browser = is_browser(&headers);
-    if browser {
-        if let Some(asset) = browser_page(uri.path()) {
-            return ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], asset).into_response();
-        }
+    if browser && let Some(asset) = browser_page(uri.path()) {
+        return ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], asset).into_response();
     }
     let mut cfg = parse(uri.path(), uri.query());
     if browser {
