@@ -22,13 +22,13 @@ use axum::http::{StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+#[cfg(target_os = "linux")]
+use prometheus::process_collector::ProcessCollector;
 use prometheus::{
     Encoder, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry, TextEncoder,
     register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
     register_int_counter_with_registry, register_int_gauge_with_registry,
 };
-#[cfg(target_os = "linux")]
-use prometheus::process_collector::ProcessCollector;
 
 use shout_core::fonts;
 use shout_core::parser::{Mode, RenderConfig};
@@ -52,7 +52,9 @@ static HTTP_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
         "shout_http_request_duration_seconds",
         "HTTP request duration in seconds, from handler entry to response.",
         &["route"],
-        vec![0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+        vec![
+            0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+        ],
         REGISTRY
     )
     .expect("register shout_http_request_duration_seconds")
@@ -255,7 +257,10 @@ pub async fn track(req: Request, next: Next) -> Response {
     let matched = req.extensions().get::<MatchedPath>().cloned();
     let start = Instant::now();
     let resp = next.run(req).await;
-    let route = matched.as_ref().map(MatchedPath::as_str).unwrap_or("/render");
+    let route = matched
+        .as_ref()
+        .map(MatchedPath::as_str)
+        .unwrap_or("/render");
     let status = status_str(resp.status());
     HTTP_REQUESTS.with_label_values(&[route, status]).inc();
     HTTP_DURATION
