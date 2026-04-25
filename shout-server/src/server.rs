@@ -48,8 +48,6 @@ pub fn app() -> Router {
         .route("/presets", get(presets_list))
         .route("/presets/{name}", get(preset_preview))
         .route("/_app/{file}", get(app_asset))
-        .route("/privacy", get(privacy))
-        .route("/about", get(about))
         .fallback(render_fallback)
         .layer(axum::middleware::from_fn(metrics::track))
 }
@@ -139,22 +137,6 @@ async fn health() -> Response {
     plain("ok\n")
 }
 
-async fn privacy() -> Response {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        ASSET_PRIVACY_HTML,
-    )
-        .into_response()
-}
-
-async fn about() -> Response {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        ASSET_ABOUT_HTML,
-    )
-        .into_response()
-}
-
 async fn favicon() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
@@ -225,18 +207,23 @@ async fn preset_preview(Path(name): Path<String>) -> Response {
     }
 }
 
+/// Paths that serve an HTML page to browsers but shout their name at curl.
+fn browser_page(path: &str) -> Option<&'static [u8]> {
+    match path {
+        "/about" => Some(ASSET_ABOUT_HTML),
+        "/privacy" => Some(ASSET_PRIVACY_HTML),
+        _ => None,
+    }
+}
+
 /// Browsers hitting a stream URL would hang a tab forever. Detect them by
 /// Accept header or User-Agent prefix and force `once` → static frame.
 fn is_browser(headers: &HeaderMap) -> bool {
-    let accepts_html = headers
-        .get(header::ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|s| s.contains("text/html"));
     let ua_browser = headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|s| s.starts_with("Mozilla/"));
-    accepts_html || ua_browser
+    accepts_html(headers) || ua_browser
 }
 
 async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
@@ -250,8 +237,18 @@ async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
         )
             .into_response();
     }
+    let browser = is_browser(&headers);
+    if browser {
+        if let Some(asset) = browser_page(uri.path()) {
+            return (
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                asset,
+            )
+                .into_response();
+        }
+    }
     let mut cfg = parse(uri.path(), uri.query());
-    if is_browser(&headers) {
+    if browser {
         cfg.once = true;
     }
 
