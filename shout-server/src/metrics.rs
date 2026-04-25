@@ -118,6 +118,18 @@ static PRESET_REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .expect("register shout_preset_requests_total")
 });
 
+/// Process-level metrics: process_cpu_seconds_total,
+/// process_resident_memory_bytes, process_open_fds, process_threads, …
+/// The collector reads /proc, so it's Linux-only. Wrapping the
+/// registration in a LazyLock makes `init()` idempotent — tests build
+/// multiple `app()` instances against this same global REGISTRY.
+#[cfg(target_os = "linux")]
+static PROCESS_COLLECTOR: LazyLock<()> = LazyLock::new(|| {
+    REGISTRY
+        .register(Box::new(ProcessCollector::for_self()))
+        .expect("register process collector");
+});
+
 static BUILD_INFO: LazyLock<IntGauge> = LazyLock::new(|| {
     let g = IntGauge::with_opts(
         prometheus::Opts::new("shout_build_info", "Build info, constant 1.")
@@ -143,13 +155,8 @@ pub fn init() {
     LazyLock::force(&FONT_REQUESTS);
     LazyLock::force(&PRESET_REQUESTS);
     LazyLock::force(&BUILD_INFO);
-    // Process-level metrics: process_cpu_seconds_total,
-    // process_resident_memory_bytes, process_open_fds, process_threads, …
-    // The collector reads /proc, so it's Linux-only.
     #[cfg(target_os = "linux")]
-    REGISTRY
-        .register(Box::new(ProcessCollector::for_self()))
-        .expect("register process collector");
+    LazyLock::force(&PROCESS_COLLECTOR);
 }
 
 #[derive(Copy, Clone)]
