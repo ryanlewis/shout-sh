@@ -4,39 +4,37 @@
     "config:recommended",
     "schedule:earlyMondays"
   ],
-  "minimumReleaseAge": "14 days",
+  "minimumReleaseAge": "5 days",
   "internalChecksFilter": "strict",
   "prCreation": "not-pending",
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5,
   "semanticCommits": "enabled",
   "semanticCommitScope": null,
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "0 days",
+    "schedule": ["at any time"],
+    "labels": ["security"]
+  },
   "packageRules": [
     {
-      "description": "Group all Go module updates into a single PR",
-      "matchManagers": ["gomod"],
-      "groupName": "go modules",
+      "description": "Group all Cargo updates into one PR",
+      "matchManagers": ["cargo"],
+      "groupName": "cargo",
       "semanticCommitType": "deps"
     },
     {
-      "description": "Group all GitHub Actions updates into a single PR",
+      "description": "Group all npm updates (web/) into one PR",
+      "matchManagers": ["npm"],
+      "groupName": "npm",
+      "semanticCommitType": "deps"
+    },
+    {
+      "description": "Group all GitHub Actions updates into one PR; auto-merge minor/patch",
       "matchManagers": ["github-actions"],
       "groupName": "github actions",
-      "semanticCommitType": "ci"
-    },
-    {
-      "description": "Auto-merge minor and patch GitHub Actions bumps after the 14-day stability window",
-      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci",
       "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
-    },
-    {
-      "description": "Sibling repos (figgo, tint) — auto-merge any update once they are tagged and the local replace directives are dropped from go.mod. Dormant until then.",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": [
-        "github.com/ryanlewis/figgo",
-        "github.com/ryanlewis/tint"
-      ],
-      "groupName": "ryanlewis sibling modules",
-      "minimumReleaseAge": "0 days",
       "automerge": true
     }
   ]

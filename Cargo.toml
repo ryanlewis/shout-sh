@@ -6,6 +6,10 @@ members = ["shout-core", "shout-server", "shout-wasm"]
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
+description = "Tiny HTTP server that renders stylized ASCII banners over curl."
+repository = "https://github.com/ryanlewis/shout-sh"
+homepage = "https://shout.sh"
+readme = "README.md"
 
 [workspace.dependencies]
 cfonts = "1.3.0"

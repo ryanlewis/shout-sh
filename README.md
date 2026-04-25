@@ -172,26 +172,3 @@ built with [cfonts] (gpl-3.0-or-later). linking cfonts in-process makes the
 combined work gpl-3 — fine for this project.
 
 [cfonts]: https://github.com/dominikwilkowski/cfonts
-
-## changes
-
-### phase 3 → browser playground
-
-- the render pipeline is now a separate crate (`shout-core`) that compiles
-  to wasm alongside the axum server (`shout-server`). one renderer, two call
-  sites.
-- `/` content-negotiates: `Accept: text/html` gets an interactive playground
-  that runs the pipeline locally via wasm-bindgen. curl users still see the
-  plain-text help.
-- `/_app/{file}` serves the embedded ts + css + wasm bundle.
-
-### phase 2 → animation
-
-- `rainbow` and `fire` now animate by default (use `once` to opt out).
-- `rainbow`'s base palette changed from cfonts' per-char `candy` random
-  palette to a stable hsl hue ring. `curl shout.sh/rainbow/hi` produces
-  different colors than phase 1 did. the new base makes animation possible
-  and looks like a rainbow.
-- new directives: `animate`, `once`. new query params: `?fps=N`,
-  `?timeout=N`.
-- browsers are auto-opted out of streams.
