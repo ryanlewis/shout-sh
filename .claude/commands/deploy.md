@@ -3,6 +3,8 @@ description: Build and deploy shout-server to the production VM (shout-sh.exe.xy
 argument-hint: [rollback]
 ---
 
+> **Operator-only.** This command is wired to the production VM at `shout-sh.exe.xyz` and needs SSH + passwordless-sudo as the `exedev` user. If you've forked shout.sh, this recipe will fail at the `scp` step — write your own deploy for your infra and ignore this file (or delete it).
+
 Cross-compile the Rust binary locally and ship it to the VM, then restart the service. The VM is artifacts-only (`/opt/shout-sh/bin/`) — source, node_modules, and `web/dist/` never live there. Front-end assets (HTML, bundled `main.js`, CSS, wasm) are embedded into the binary at build time via `include_bytes!` in `shout-server/src/server.rs`.
 
 Cloudflare Worker `shout-sh-proxy` fronts `shout.sh` → `shout-sh.exe.xyz` (for the HTTP curl story). Deploying the VM binary is enough; the Worker doesn't need a redeploy unless `worker/` changes.
@@ -24,7 +26,7 @@ If `$ARGUMENTS` is `rollback`:
 
 1. **Pre-flight**
    - `git status --porcelain` — note uncommitted changes (warn, don't block; user may be iterating).
-   - Confirm `cargo zigbuild`, `pnpm`, `wasm-pack`, `scp`, `ssh` are present. The rust target `x86_64-unknown-linux-gnu` must be installed (`rustup target list --installed`).
+   - Confirm `cargo zigbuild`, `pnpm`, `wasm-pack`, `scp`, `ssh` are present. The rust target `x86_64-unknown-linux-gnu` must be installed (`rustup target list --installed`) — the `.2.39` suffix in the build command below is a zigbuild glibc pin, not a rustup target name.
 
 2. **Build web assets** (produces `web/dist/` which the Rust binary embeds):
    ```
@@ -67,4 +69,5 @@ If `$ARGUMENTS` is `rollback`:
 - The VM has no Rust, Node, or wasm-pack — never try to build there.
 - `systemctl restart` and the `/opt/shout-sh/bin/` swap need sudo (file is owned by root); passwordless sudo is configured for the `exedev` user.
 - Restarts are ~sub-second; there's no graceful drain. Streaming clients (rainbow/fire) will be cut mid-frame and need to reconnect — fine for an animation, worth knowing.
+- Runtime config (`PORT`, `METRICS_ADDR` for the Tailscale-only metrics listener) lives in the `shout-sh.service` systemd unit on the VM, not in this repo. `systemctl restart` re-reads it; if you need to change an env var, edit the unit on the VM (`sudo systemctl edit shout-sh.service`) and restart — a binary deploy alone won't pick up new env values that aren't already set there.
 - The Cloudflare Worker at `worker/` only needs `wrangler deploy` when `worker.js` or `wrangler.toml` changes; it is **not** part of this recipe.
