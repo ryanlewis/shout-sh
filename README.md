@@ -6,11 +6,12 @@ a tiny http server that renders stylized ascii banners over `curl`.
 $ curl shout.sh/HELLO
 $ curl shout.sh/tiny/hello+world
 $ curl shout.sh/red/alert
-$ curl -N shout.sh/fire/boom
+$ curl shout.sh/fire/boom
 ```
 
-`rainbow` and `fire` animate by default. pass `-N` to curl so your terminal
-doesn't buffer the stream.
+`rainbow` and `fire` animate by default — frames stream live to your
+terminal. (if you're piping or redirecting, add `-N` to disable curl's
+output buffering.)
 
 ## usage
 
@@ -73,9 +74,9 @@ lets the animated mode win.
 ### modes
 
 ```
-$ curl shout.sh/solid/hi          # solid white (or pair with a color)
-$ curl -N shout.sh/rainbow/hi     # animated hsl hue ring
-$ curl -N shout.sh/fire/hi        # animated red/orange/yellow flicker
+$ curl shout.sh/solid/hi       # solid white (or pair with a color)
+$ curl shout.sh/rainbow/hi     # animated hsl hue ring
+$ curl shout.sh/fire/hi        # animated red/orange/yellow flicker
 ```
 
 solid and bare colors never animate. rainbow and fire animate by default —
@@ -84,10 +85,10 @@ add `once` to force a static frame.
 ### animation
 
 ```
-$ curl -N shout.sh/rainbow/hi
-$ curl -N 'shout.sh/fire/boom?fps=20&timeout=30'
+$ curl shout.sh/rainbow/hi
+$ curl 'shout.sh/fire/boom?fps=20&timeout=30'
 $ curl shout.sh/rainbow+once/hi       # single static frame
-$ curl -N shout.sh/solid+animate/ok   # stream a still frame (pointless, works)
+$ curl shout.sh/solid+animate/ok      # stream a still frame (pointless, works)
 ```
 
 - `animate` — force animation on any mode.
