@@ -9,6 +9,9 @@
 /web/dist/
 /web/node_modules/
 
+# Cloudflare Worker (wrangler) local state
+/worker/.wrangler/
+
 # IDE / editor
 .idea/
 *.iml
