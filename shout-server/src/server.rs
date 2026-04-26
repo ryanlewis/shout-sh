@@ -388,12 +388,11 @@ fn build_help_text() -> String {
     s.push_str("curl-friendly ansi banners. shout text at your terminal.\n\n");
     s.push_str("USAGE\n");
     s.push_str("  $ curl shout.sh/{text}\n");
-    s.push_str("  $ curl shout.sh/{directives}/{text}\n");
-    s.push_str("  $ curl -N shout.sh/rainbow/hi    # -N: animation streams\n\n");
+    s.push_str("  $ curl shout.sh/{directives}/{text}\n\n");
     s.push_str("  $ curl shout.sh/HELLO\n");
     s.push_str("  $ curl shout.sh/tiny/hello+world\n");
     s.push_str("  $ curl shout.sh/red/alert\n");
-    s.push_str("  $ curl -N shout.sh/fire/boom\n");
+    s.push_str("  $ curl shout.sh/fire/boom\n");
     s.push_str("  $ curl 'shout.sh/HELLO?format=json'\n\n");
     s.push_str("FONTS\n");
     for f in fonts::FONTS {
@@ -404,8 +403,8 @@ fn build_help_text() -> String {
     s.push('\n');
     s.push_str("MODES\n");
     s.push_str("  solid     single color. pair with a color directive.\n");
-    s.push_str("  rainbow   animated hsl hue ring. curl -N to see it.\n");
-    s.push_str("  fire      animated red/orange/yellow flicker. curl -N.\n\n");
+    s.push_str("  rainbow   animated hsl hue ring.\n");
+    s.push_str("  fire      animated red/orange/yellow flicker.\n\n");
     s.push_str("ANIMATION\n");
     s.push_str("  animate      force animation on any mode.\n");
     s.push_str("  once         force a single static frame.\n");
