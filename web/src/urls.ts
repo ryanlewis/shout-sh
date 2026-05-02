@@ -44,6 +44,14 @@ export function buildPath(state: UrlState): string {
 	return `/${head}${text}${query}`;
 }
 
+const SHELL_UNSAFE = /[&?*[\](){};|<>$`\\"'\s~#!]/;
+
+// Single quotes are always safe: buildPath percent-encodes user text, so
+// a literal `'` can never appear in the wrapped string.
+function shellQuoteIfNeeded(s: string): string {
+	return SHELL_UNSAFE.test(s) ? `'${s}'` : s;
+}
+
 export function buildCurl(state: UrlState, host = 'shout.sh'): string {
-	return `curl ${host}${buildPath(state)}`;
+	return `curl ${shellQuoteIfNeeded(`${host}${buildPath(state)}`)}`;
 }
