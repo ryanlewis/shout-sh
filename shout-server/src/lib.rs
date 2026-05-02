@@ -10,4 +10,4 @@ mod metrics;
 mod server;
 
 pub use metrics::metrics_app;
-pub use server::{app, help_text};
+pub use server::{app, assets, help_text};

@@ -13,7 +13,9 @@ import { mountBlockCaret } from './ui/BlockCaret.js';
 import { mountAdvanced, BG_CSS } from './ui/Advanced.js';
 import { track } from './analytics.js';
 
-const WASM_URL = '/_app/shout_wasm_bg.wasm';
+// Substituted at build time by esbuild's `define`; see web/esbuild.config.mjs.
+declare const __WASM_URL__: string;
+const WASM_URL = __WASM_URL__;
 
 async function main(): Promise<void> {
 	const frame = must<HTMLElement>('#frame');

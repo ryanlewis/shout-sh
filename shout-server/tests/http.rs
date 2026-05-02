@@ -16,6 +16,7 @@ use axum::http::{Request, StatusCode, header};
 use tower::ServiceExt;
 
 use shout_server::app;
+use shout_server::assets::{NAME_MAIN_CSS, NAME_MAIN_JS, NAME_WASM_BG};
 
 async fn get(uri: &str) -> (StatusCode, String, String) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
@@ -342,9 +343,18 @@ async fn root_plain_accept_returns_help() {
     assert!(s.contains("USAGE"));
 }
 
+async fn header_value(uri: &str, name: header::HeaderName) -> Option<String> {
+    let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    let resp = app().oneshot(req).await.unwrap();
+    resp.headers()
+        .get(name)
+        .map(|v| v.to_str().unwrap().to_string())
+}
+
 #[tokio::test]
 async fn app_asset_main_js_has_javascript_ctype() {
-    let (status, ctype, body) = get("/_app/main.js").await;
+    let uri = format!("/_app/{NAME_MAIN_JS}");
+    let (status, ctype, body) = get(&uri).await;
     assert_eq!(status, StatusCode::OK);
     assert!(ctype.contains("javascript"), "got: {ctype}");
     assert!(!body.is_empty());
@@ -352,7 +362,8 @@ async fn app_asset_main_js_has_javascript_ctype() {
 
 #[tokio::test]
 async fn app_asset_main_css_has_css_ctype() {
-    let (status, ctype, _) = get("/_app/main.css").await;
+    let uri = format!("/_app/{NAME_MAIN_CSS}");
+    let (status, ctype, _) = get(&uri).await;
     assert_eq!(status, StatusCode::OK);
     assert!(ctype.contains("text/css"));
 }
@@ -360,7 +371,8 @@ async fn app_asset_main_css_has_css_ctype() {
 #[tokio::test]
 async fn app_asset_wasm_has_application_wasm_ctype() {
     // Required for WebAssembly.instantiateStreaming to succeed in browsers.
-    let (status, ctype, body) = get_with_accept("/_app/shout_wasm_bg.wasm", "*/*").await;
+    let uri = format!("/_app/{NAME_WASM_BG}");
+    let (status, ctype, body) = get_with_accept(&uri, "*/*").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(ctype, "application/wasm", "got: {ctype}");
     // wasm magic: \0asm
@@ -368,9 +380,50 @@ async fn app_asset_wasm_has_application_wasm_ctype() {
 }
 
 #[tokio::test]
+async fn app_asset_unhashed_legacy_name_is_404() {
+    let (status, _, _) = get("/_app/main.js").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn app_asset_unknown_is_404() {
     let (status, _, _) = get("/_app/does-not-exist.js").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn app_asset_is_immutable_cacheable() {
+    let uri = format!("/_app/{NAME_MAIN_JS}");
+    let cc = header_value(&uri, header::CACHE_CONTROL).await.unwrap();
+    assert!(cc.contains("immutable"), "got: {cc}");
+    assert!(cc.contains("max-age="), "got: {cc}");
+}
+
+#[tokio::test]
+async fn html_pages_are_no_cache() {
+    for path in ["/", "/about", "/privacy"] {
+        let req = Request::builder()
+            .uri(path)
+            .header(header::ACCEPT, "text/html")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app().oneshot(req).await.unwrap();
+        let cc = resp
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
+        assert!(cc.contains("no-cache"), "{path}: got {cc:?}");
+    }
+}
+
+#[tokio::test]
+async fn html_pages_reference_hashed_assets() {
+    // index.html should embed the same hashed filenames the server serves.
+    let (_, _, body) = get_with_accept("/", "text/html").await;
+    let s = String::from_utf8_lossy(&body);
+    assert!(s.contains(NAME_MAIN_JS), "missing {NAME_MAIN_JS} in HTML");
+    assert!(s.contains(NAME_MAIN_CSS), "missing {NAME_MAIN_CSS} in HTML");
 }
 
 #[tokio::test]
