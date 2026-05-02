@@ -29,12 +29,6 @@ function shortHash(bytes) {
 	return createHash('sha256').update(bytes).digest('hex').slice(0, 8);
 }
 
-async function copyTopLevelHtml() {
-	for (const name of HTML_FILES) {
-		await cp(join(root, name), join(dist, name));
-	}
-}
-
 async function copyTopLevelStatic() {
 	// favicon.svg ships as-is. The OG card is generated from the raw banner
 	// captured from `curl shout.sh/shout.sh` so the preview shows what the
@@ -135,14 +129,17 @@ function emittedNames(metafile) {
 	return out;
 }
 
+// Read each source HTML, apply replacements, write the stamped copy to
+// dist. Reading from source every time means the unhashed placeholders
+// (`/_app/main.js`, `/_app/main.css`) are always present to replace —
+// no reset step needed in watch mode.
 async function stampHtml(replacements) {
 	for (const name of HTML_FILES) {
-		const path = join(dist, name);
-		let html = await readFile(path, 'utf8');
+		let html = await readFile(join(root, name), 'utf8');
 		for (const [from, to] of Object.entries(replacements)) {
 			html = html.replaceAll(from, to);
 		}
-		await writeFile(path, html);
+		await writeFile(join(dist, name), html);
 	}
 }
 
@@ -164,7 +161,6 @@ async function applyBuildResult(result, wasmName) {
 }
 
 await clean();
-await copyTopLevelHtml();
 await copyTopLevelStatic();
 const wasmName = await emitHashedWasm();
 const wasmUrl = `${APP_URL_PREFIX}/${wasmName}`;
@@ -174,10 +170,7 @@ if (watch) {
 		name: 'stamp-hashed-html',
 		setup(build) {
 			build.onEnd(async (result) => {
-				if (!result.metafile) return;
-				// Reset HTML to source so the unhashed placeholder is always there to replace.
-				await copyTopLevelHtml();
-				await applyBuildResult(result, wasmName);
+				if (result.metafile) await applyBuildResult(result, wasmName);
 			});
 		},
 	};

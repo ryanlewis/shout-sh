@@ -343,14 +343,6 @@ async fn root_plain_accept_returns_help() {
     assert!(s.contains("USAGE"));
 }
 
-async fn header_value(uri: &str, name: header::HeaderName) -> Option<String> {
-    let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
-    let resp = app().oneshot(req).await.unwrap();
-    resp.headers()
-        .get(name)
-        .map(|v| v.to_str().unwrap().to_string())
-}
-
 #[tokio::test]
 async fn app_asset_main_js_has_javascript_ctype() {
     let uri = format!("/_app/{NAME_MAIN_JS}");
@@ -394,7 +386,13 @@ async fn app_asset_unknown_is_404() {
 #[tokio::test]
 async fn app_asset_is_immutable_cacheable() {
     let uri = format!("/_app/{NAME_MAIN_JS}");
-    let cc = header_value(&uri, header::CACHE_CONTROL).await.unwrap();
+    let req = Request::builder().uri(&uri).body(Body::empty()).unwrap();
+    let resp = app().oneshot(req).await.unwrap();
+    let cc = resp
+        .headers()
+        .get(header::CACHE_CONTROL)
+        .map(|v| v.to_str().unwrap().to_string())
+        .unwrap_or_default();
     assert!(cc.contains("immutable"), "got: {cc}");
     assert!(cc.contains("max-age="), "got: {cc}");
 }

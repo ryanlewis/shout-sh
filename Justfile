@@ -44,7 +44,7 @@ dev: wasm-build
     (cd web && pnpm dev) &
     # Give esbuild a moment to produce the first dist/ so the server build
     # script doesn't trip its missing-asset gate on the first `cargo run`.
-    # Wait for esbuild's first build — its manifest is the last file written.
+    # esbuild writes manifest.txt last, so it's the all-clear for the server build.
     while [ ! -f web/dist/index.html ] || [ ! -f web/dist/og.png ] || [ ! -f web/dist/_app/manifest.txt ]; do sleep 0.1; done
     cargo run -p shout-server
 

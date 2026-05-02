@@ -1,14 +1,23 @@
-// Reads `web/dist/_app/manifest.txt` (written by esbuild — see
-// web/esbuild.config.mjs) to learn which content-hashed filenames map to
-// each canonical asset, then emits a Rust module that include_bytes!() each
-// hashed file and exposes `app_asset_for(name)` plus `NAME_*` constants.
-// Generating this matters because esbuild changes the hashed names every
-// build, so server.rs can't include_bytes! them by literal path.
+// Reads web/dist/_app/manifest.txt (written by esbuild) and emits a Rust
+// module with `app_asset_for(name)` plus `NAME_*` constants — the hashed
+// filenames change every web build, so the table can't live in source.
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::exit;
+
+const REQUIRED_TOP: &[&str] = &["index.html", "about.html", "privacy.html", "favicon.svg", "og.png"];
+const REQUIRED_KEYS: &[&str] = &["main_js", "main_css", "wasm_bg"];
+
+fn gate_fail(reason: &str) -> ! {
+    eprintln!(
+        "\nshout-server build gate: web/dist/ {reason}\n\
+         run `just web-build` from the repo root before building the server.\n"
+    );
+    exit(1);
+}
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -20,24 +29,33 @@ fn main() {
     println!("cargo:rerun-if-changed={}", dist.display());
     println!("cargo:rerun-if-changed={}", dist_app.display());
 
-    let required_top = ["index.html", "about.html", "privacy.html", "favicon.svg", "og.png"];
-    let missing_top: Vec<&str> = required_top
+    let missing_top: Vec<&str> = REQUIRED_TOP
         .iter()
         .copied()
         .filter(|f| !dist.join(f).exists())
         .collect();
-    if !missing_top.is_empty() || !manifest_path.exists() {
-        eprintln!(
-            "\nshout-server build gate: web/dist/ incomplete (missing {missing_top:?} or _app/manifest.txt)\n\
-             run `just web-build` from the repo root before building the server.\n"
-        );
-        exit(1);
+    if !missing_top.is_empty() {
+        gate_fail(&format!("missing top-level files {missing_top:?}"));
+    }
+    if !manifest_path.exists() {
+        gate_fail("missing _app/manifest.txt");
     }
 
-    let manifest = read_manifest(&manifest_path);
-    let main_js = manifest_get(&manifest, "main_js", &manifest_path);
-    let main_css = manifest_get(&manifest, "main_css", &manifest_path);
-    let wasm_bg = manifest_get(&manifest, "wasm_bg", &manifest_path);
+    let manifest = match read_manifest(&manifest_path) {
+        Ok(m) => m,
+        Err(e) => gate_fail(&format!("can't read {}: {e}", manifest_path.display())),
+    };
+    let missing_keys: Vec<&str> = REQUIRED_KEYS
+        .iter()
+        .copied()
+        .filter(|k| !manifest.contains_key(*k))
+        .collect();
+    if !missing_keys.is_empty() {
+        gate_fail(&format!(
+            "{} missing keys {missing_keys:?}",
+            manifest_path.display()
+        ));
+    }
 
     let mut entries: Vec<PathBuf> = fs::read_dir(&dist_app)
         .unwrap_or_else(|e| panic!("read {}: {e}", dist_app.display()))
@@ -53,13 +71,10 @@ fn main() {
             panic!("unknown asset extension: {}", path.display());
         });
         println!("cargo:rerun-if-changed={}", path.display());
-        let abs = path
-            .canonicalize()
-            .unwrap_or_else(|e| panic!("canonicalize {}: {e}", path.display()));
         arms.push_str(&format!(
             "        {name:?} => (include_bytes!({path:?}), {ctype:?}),\n",
             name = file_name,
-            path = abs.to_string_lossy(),
+            path = path.to_string_lossy(),
         ));
     }
 
@@ -75,34 +90,28 @@ pub fn app_asset_for(name: &str) -> Option<(&'static [u8], &'static str)> {{
 {arms}        _ => return None,
     }})
 }}
-"#
+"#,
+        main_js = manifest["main_js"],
+        main_css = manifest["main_css"],
+        wasm_bg = manifest["wasm_bg"],
     );
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("assets_gen.rs");
     fs::write(&out_path, body).expect("write assets_gen.rs");
 }
 
-fn read_manifest(path: &Path) -> Vec<(String, String)> {
-    let text = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    text.lines()
+fn read_manifest(path: &Path) -> std::io::Result<HashMap<String, String>> {
+    let text = fs::read_to_string(path)?;
+    Ok(text
+        .lines()
         .filter_map(|line| {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
                 return None;
             }
-            line.split_once('=')
-                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            line.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
         })
-        .collect()
-}
-
-fn manifest_get(manifest: &[(String, String)], key: &str, path: &Path) -> String {
-    manifest
-        .iter()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.clone())
-        .unwrap_or_else(|| panic!("{}: missing key {key:?}", path.display()))
+        .collect())
 }
 
 fn ctype_for(name: &str) -> Option<&'static str> {
