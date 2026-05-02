@@ -8,7 +8,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-const REQUIRED_TOP: &[&str] = &["index.html", "about.html", "privacy.html", "favicon.svg", "og.png"];
+const REQUIRED_TOP: &[&str] = &[
+    "index.html",
+    "about.html",
+    "privacy.html",
+    "favicon.svg",
+    "og.png",
+];
 const REQUIRED_KEYS: &[&str] = &["main_js", "main_css", "wasm_bg"];
 
 fn gate_fail(reason: &str) -> ! {
@@ -109,7 +115,8 @@ fn read_manifest(path: &Path) -> std::io::Result<HashMap<String, String>> {
             if line.is_empty() || line.starts_with('#') {
                 return None;
             }
-            line.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            line.split_once('=')
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
         })
         .collect())
 }
