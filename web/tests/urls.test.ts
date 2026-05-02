@@ -76,4 +76,23 @@ describe('buildCurl', () => {
 		const s: UrlState = { ...base, mode: 'rainbow', once: true };
 		expect(buildCurl(s)).toBe('curl shout.sh/rainbow+once/HELLO');
 	});
+
+	it('quotes the URL when a single query param is present (zsh ? glob)', () => {
+		const s: UrlState = { ...base, mode: 'rainbow', fps: 20 };
+		expect(buildCurl(s)).toBe(`curl 'shout.sh/rainbow/HELLO?fps=20'`);
+	});
+
+	it('quotes the URL when multiple query params are present (& backgrounds)', () => {
+		const s: UrlState = { ...base, mode: 'rainbow', fps: 20, letterSpacing: 0 };
+		expect(buildCurl(s)).toBe(`curl 'shout.sh/rainbow/HELLO?fps=20&spacing=0'`);
+	});
+
+	it('leaves plain URLs unquoted', () => {
+		expect(buildCurl({ ...base })).toBe('curl shout.sh/HELLO');
+	});
+
+	it('quotes URLs whose path contains a shell metachar like *', () => {
+		// encodeURIComponent leaves * as-is, so it lands unencoded in the URL.
+		expect(buildCurl({ ...base, text: '*' })).toBe(`curl 'shout.sh/*'`);
+	});
 });
