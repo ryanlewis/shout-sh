@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "shout-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cfonts",
  "percent-encoding",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "shout-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-stream",
  "axum",
@@ -677,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "shout-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "getrandom",
  "serde",
