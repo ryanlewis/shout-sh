@@ -1,40 +1,39 @@
-// esbuild driver for the shout.sh playground. Bundles TS + CSS, copies the
-// wasm glue and the raw .wasm, and stamps out a flat dist/ that the Rust
-// server embeds with include_bytes!.
+// esbuild driver for the shout.sh playground. Bundles TS + CSS, hashes the
+// runtime-fetched wasm, stamps the hashed filenames into the HTML, and lays
+// out a flat dist/ that the Rust server embeds via build.rs.
 
 import { context, build } from 'esbuild';
 import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, basename } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const dist = join(root, 'dist');
+const distApp = join(dist, '_app');
 const assets = join(root, 'assets');
 const wasmPkg = join(root, 'src', 'wasm-pkg');
 const watch = process.argv.includes('--watch');
 
+const HTML_FILES = ['index.html', 'about.html', 'privacy.html'];
+const APP_URL_PREFIX = '/_app';
+
 async function clean() {
 	await rm(dist, { recursive: true, force: true });
-	await mkdir(dist, { recursive: true });
+	await mkdir(distApp, { recursive: true });
 }
 
-async function copyStatic() {
-	await cp(join(root, 'index.html'), join(dist, 'index.html'));
-	await cp(join(root, 'privacy.html'), join(dist, 'privacy.html'));
-	await cp(join(root, 'about.html'), join(dist, 'about.html'));
-	if (!existsSync(wasmPkg)) {
-		throw new Error(`missing ${wasmPkg} — run \`just wasm-build\` from the repo root first`);
-	}
-	await cp(join(wasmPkg, 'shout_wasm.js'), join(dist, 'shout_wasm.js'));
-	await cp(join(wasmPkg, 'shout_wasm_bg.wasm'), join(dist, 'shout_wasm_bg.wasm'));
+function shortHash(bytes) {
+	return createHash('sha256').update(bytes).digest('hex').slice(0, 8);
+}
 
+async function copyTopLevelStatic() {
 	// favicon.svg ships as-is. The OG card is generated from the raw banner
-	// captured from `curl shout.sh/shout.sh` (committed at og-banner.txt) so
-	// the preview shows what the tool actually produces, not marketing copy.
-	// Rasterize to PNG because Slack / Twitter / Facebook don't reliably
-	// honor SVG og:images.
+	// captured from `curl shout.sh/shout.sh` so the preview shows what the
+	// tool actually produces. PNG because Slack/Twitter/Facebook don't
+	// reliably honor SVG og:images.
 	await cp(join(assets, 'favicon.svg'), join(dist, 'favicon.svg'));
 	const ogSvg = buildOgSvg(await readFile(join(assets, 'og-banner.txt'), 'utf8'));
 	const fontsDir = join(assets, 'fonts');
@@ -52,6 +51,16 @@ async function copyStatic() {
 		.render()
 		.asPng();
 	await writeFile(join(dist, 'og.png'), png);
+}
+
+async function emitHashedWasm() {
+	if (!existsSync(wasmPkg)) {
+		throw new Error(`missing ${wasmPkg} — run \`just wasm-build\` from the repo root first`);
+	}
+	const bytes = await readFile(join(wasmPkg, 'shout_wasm_bg.wasm'));
+	const name = `shout_wasm_bg-${shortHash(bytes)}.wasm`;
+	await writeFile(join(distApp, name), bytes);
+	return name;
 }
 
 function buildOgSvg(bannerRaw) {
@@ -90,48 +99,85 @@ function buildOgSvg(bannerRaw) {
 </svg>`;
 }
 
-const esbuildOpts = {
-	entryPoints: [join(root, 'src', 'main.ts'), join(root, 'src', 'styles.css')],
-	entryNames: '[name]',
-	bundle: true,
-	format: 'esm',
-	target: 'es2022',
-	outdir: dist,
-	sourcemap: watch ? 'inline' : false,
-	minify: !watch,
-	logLevel: 'info',
-	// wasm glue uses import.meta.url to resolve the .wasm alongside it — keep
-	// its imports external so the dynamic URL resolution works at runtime.
-	external: ['*.wasm'],
-	loader: { '.css': 'css' },
-};
-
-// The generated glue references styles.css output as main.css via bundle.
-// Rename the CSS output file to match what index.html expects.
-await clean();
-await copyStatic();
-
-// esbuild emits styles.css; the server and index.html both expect main.css.
-// Rename on every build (including watch rebuilds) so the dev loop works.
-async function renameStylesToMain() {
-	const stylesPath = join(dist, 'styles.css');
-	if (!existsSync(stylesPath)) return;
-	const body = await readFile(stylesPath);
-	await writeFile(join(dist, 'main.css'), body);
-	await rm(stylesPath);
+function makeEsbuildOpts(wasmUrl) {
+	return {
+		entryPoints: [join(root, 'src', 'main.ts'), join(root, 'src', 'styles.css')],
+		entryNames: '[name]-[hash]',
+		bundle: true,
+		format: 'esm',
+		target: 'es2022',
+		outdir: distApp,
+		sourcemap: watch ? 'inline' : false,
+		minify: !watch,
+		metafile: true,
+		logLevel: 'info',
+		// wasm glue uses import.meta.url to resolve the .wasm alongside it — keep
+		// its imports external so the dynamic URL resolution works at runtime.
+		external: ['*.wasm'],
+		loader: { '.css': 'css' },
+		define: { __WASM_URL__: JSON.stringify(wasmUrl) },
+	};
 }
 
+function emittedNames(metafile) {
+	const out = {};
+	for (const [path, info] of Object.entries(metafile.outputs)) {
+		if (!info.entryPoint) continue;
+		const entry = basename(info.entryPoint);
+		out[entry] = basename(path);
+	}
+	return out;
+}
+
+// Read each source HTML, apply replacements, write the stamped copy to
+// dist. Reading from source every time means the unhashed placeholders
+// (`/_app/main.js`, `/_app/main.css`) are always present to replace —
+// no reset step needed in watch mode.
+async function stampHtml(replacements) {
+	for (const name of HTML_FILES) {
+		let html = await readFile(join(root, name), 'utf8');
+		for (const [from, to] of Object.entries(replacements)) {
+			html = html.replaceAll(from, to);
+		}
+		await writeFile(join(dist, name), html);
+	}
+}
+
+async function applyBuildResult(result, wasmName) {
+	const named = emittedNames(result.metafile);
+	const jsName = named['main.ts'];
+	const cssName = named['styles.css'];
+	if (!jsName || !cssName) {
+		throw new Error(`esbuild metafile missing entries: ${JSON.stringify(named)}`);
+	}
+	await stampHtml({
+		'/_app/main.js': `${APP_URL_PREFIX}/${jsName}`,
+		'/_app/main.css': `${APP_URL_PREFIX}/${cssName}`,
+	});
+	// Manifest of canonical → hashed names. shout-server/build.rs reads
+	// this so the Rust side never has to pattern-match output filenames.
+	const manifest = `main_js=${jsName}\nmain_css=${cssName}\nwasm_bg=${wasmName}\n`;
+	await writeFile(join(distApp, 'manifest.txt'), manifest);
+}
+
+await clean();
+await copyTopLevelStatic();
+const wasmName = await emitHashedWasm();
+const wasmUrl = `${APP_URL_PREFIX}/${wasmName}`;
+
 if (watch) {
-	const renamePlugin = {
-		name: 'rename-styles-to-main',
+	const stampPlugin = {
+		name: 'stamp-hashed-html',
 		setup(build) {
-			build.onEnd(() => renameStylesToMain());
+			build.onEnd(async (result) => {
+				if (result.metafile) await applyBuildResult(result, wasmName);
+			});
 		},
 	};
-	const ctx = await context({ ...esbuildOpts, plugins: [renamePlugin] });
+	const ctx = await context({ ...makeEsbuildOpts(wasmUrl), plugins: [stampPlugin] });
 	await ctx.watch();
 	console.log('esbuild watching…');
 } else {
-	await build(esbuildOpts);
-	await renameStylesToMain();
+	const result = await build(makeEsbuildOpts(wasmUrl));
+	await applyBuildResult(result, wasmName);
 }

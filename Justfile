@@ -44,7 +44,8 @@ dev: wasm-build
     (cd web && pnpm dev) &
     # Give esbuild a moment to produce the first dist/ so the server build
     # script doesn't trip its missing-asset gate on the first `cargo run`.
-    while [ ! -f web/dist/index.html ] || [ ! -f web/dist/main.css ] || [ ! -f web/dist/main.js ] || [ ! -f web/dist/og.png ]; do sleep 0.1; done
+    # esbuild writes manifest.txt last, so it's the all-clear for the server build.
+    while [ ! -f web/dist/index.html ] || [ ! -f web/dist/og.png ] || [ ! -f web/dist/_app/manifest.txt ]; do sleep 0.1; done
     cargo run -p shout-server
 
 # Full CI: rebuild web assets, then run lints + tests + release build.

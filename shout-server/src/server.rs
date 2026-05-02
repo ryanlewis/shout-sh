@@ -52,38 +52,32 @@ pub fn app() -> Router {
         .layer(axum::middleware::from_fn(metrics::track))
 }
 
-/// Embedded playground assets. Keep this list in sync with web/dist/.
-/// Anything here is served at `/_app/{file}` with its matching MIME.
 const ASSET_INDEX_HTML: &[u8] = include_bytes!("../../web/dist/index.html");
 const ASSET_PRIVACY_HTML: &[u8] = include_bytes!("../../web/dist/privacy.html");
 const ASSET_ABOUT_HTML: &[u8] = include_bytes!("../../web/dist/about.html");
-const ASSET_MAIN_JS: &[u8] = include_bytes!("../../web/dist/main.js");
-const ASSET_MAIN_CSS: &[u8] = include_bytes!("../../web/dist/main.css");
-const ASSET_WASM_JS: &[u8] = include_bytes!("../../web/dist/shout_wasm.js");
-const ASSET_WASM_BG: &[u8] = include_bytes!("../../web/dist/shout_wasm_bg.wasm");
 const ASSET_FAVICON_SVG: &[u8] = include_bytes!("../../web/dist/favicon.svg");
 const ASSET_OG_PNG: &[u8] = include_bytes!("../../web/dist/og.png");
 
-fn asset_for(name: &str) -> Option<(&'static [u8], &'static str)> {
-    Some(match name {
-        "index.html" => (ASSET_INDEX_HTML, "text/html; charset=utf-8"),
-        "main.js" => (ASSET_MAIN_JS, "text/javascript; charset=utf-8"),
-        "main.css" => (ASSET_MAIN_CSS, "text/css; charset=utf-8"),
-        "shout_wasm.js" => (ASSET_WASM_JS, "text/javascript; charset=utf-8"),
-        "shout_wasm_bg.wasm" => (ASSET_WASM_BG, "application/wasm"),
-        _ => return None,
-    })
+pub mod assets {
+    include!(concat!(env!("OUT_DIR"), "/assets_gen.rs"));
 }
+
+// Safe to cache forever because every /_app/* URL is content-hashed.
+const IMMUTABLE_CACHE: &str = "public, max-age=31536000, immutable";
+// HTML must not outlive a deploy: it embeds the hashed asset URLs and
+// would otherwise reference 404'd files after a redeploy.
+const HTML_CACHE: &str = "no-cache";
+const STATIC_DAY_CACHE: &str = "public, max-age=86400";
 
 async fn app_asset(Path(file): Path<String>) -> Response {
     if file.len() > MAX_PARAM_LEN {
         return StatusCode::NOT_FOUND.into_response();
     }
-    match asset_for(&file) {
+    match assets::app_asset_for(&file) {
         Some((body, ctype)) => (
             [
                 (header::CONTENT_TYPE, ctype),
-                (header::CACHE_CONTROL, "no-cache"),
+                (header::CACHE_CONTROL, IMMUTABLE_CACHE),
             ],
             body,
         )
@@ -117,13 +111,20 @@ fn error_response(err: RenderError) -> Response {
 
 async fn root(headers: HeaderMap) -> Response {
     if accepts_html(&headers) {
-        return (
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-            ASSET_INDEX_HTML,
-        )
-            .into_response();
+        return html_page(ASSET_INDEX_HTML);
     }
     plain(HELP.as_str())
+}
+
+fn html_page(body: &'static [u8]) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, HTML_CACHE),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 fn accepts_html(headers: &HeaderMap) -> bool {
@@ -145,7 +146,7 @@ async fn favicon_svg() -> Response {
     (
         [
             (header::CONTENT_TYPE, "image/svg+xml"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::CACHE_CONTROL, STATIC_DAY_CACHE),
         ],
         ASSET_FAVICON_SVG,
     )
@@ -156,7 +157,7 @@ async fn og_image() -> Response {
     (
         [
             (header::CONTENT_TYPE, "image/png"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::CACHE_CONTROL, STATIC_DAY_CACHE),
         ],
         ASSET_OG_PNG,
     )
@@ -239,7 +240,7 @@ async fn render_fallback(uri: Uri, headers: HeaderMap) -> Response {
     }
     let browser = is_browser(&headers);
     if browser && let Some(asset) = browser_page(uri.path()) {
-        return ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], asset).into_response();
+        return html_page(asset);
     }
     let mut cfg = parse(uri.path(), uri.query());
     if browser {
