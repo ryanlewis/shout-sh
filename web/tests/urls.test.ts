@@ -95,4 +95,12 @@ describe('buildCurl', () => {
 		// encodeURIComponent leaves * as-is, so it lands unencoded in the URL.
 		expect(buildCurl({ ...base, text: '*' })).toBe(`curl 'shout.sh/*'`);
 	});
+
+	it("escapes single quotes in the text using '\\''", () => {
+		// encodeURIComponent leaves `'` as-is, so it survives into the URL and
+		// would break a naive `'…'` wrapper. Regression for "hello|world'''".
+		expect(buildCurl({ ...base, text: "hello|world'''", fps: 24 })).toBe(
+			`curl 'shout.sh/hello%7Cworld'\\'''\\'''\\''?fps=24'`,
+		);
+	});
 });

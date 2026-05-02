@@ -46,10 +46,11 @@ export function buildPath(state: UrlState): string {
 
 const SHELL_UNSAFE = /[&?*[\](){};|<>$`\\"'\s~#!]/;
 
-// Single quotes are always safe: buildPath percent-encodes user text, so
-// a literal `'` can never appear in the wrapped string.
+// encodeURIComponent leaves `'` (and * ( ) ! ~) untouched, so a user-typed
+// quote survives into the URL — close-quote / escaped-quote / re-open is
+// the POSIX-safe way to embed it inside single quotes.
 function shellQuoteIfNeeded(s: string): string {
-	return SHELL_UNSAFE.test(s) ? `'${s}'` : s;
+	return SHELL_UNSAFE.test(s) ? `'${s.replace(/'/g, `'\\''`)}'` : s;
 }
 
 export function buildCurl(state: UrlState, host = 'shout.sh'): string {
