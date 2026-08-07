@@ -1,6 +1,16 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>ryanlewis/renovate-config"],
+  "customManagers": [
+    {
+      "description": "Tool versions pinned as env vars in workflows, marked with a renovate annotation comment. Covers the curl-a-release-tarball installs (just, wasm-pack) that no built-in manager can see.",
+      "customType": "regex",
+      "managerFilePatterns": ["/\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s*\\n\\s*[A-Z_]+_VERSION: (?<currentValue>[^\\s]+)"
+      ]
+    }
+  ],
   "packageRules": [
     {
       "description": "Cargo on its own PR, separate from the web/ npm tree.",
