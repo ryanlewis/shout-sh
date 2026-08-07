@@ -1,0 +1,9 @@
+# cargo-deny config — security checks only (advisories + sources).
+# Licenses/bans deliberately not policed; run `cargo deny check advisories sources`.
+
+[advisories]
+yanked = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
