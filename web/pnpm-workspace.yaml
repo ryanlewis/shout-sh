@@ -1,0 +1,5 @@
+allowBuilds:
+  # esbuild works without its postinstall — the binary ships via the
+  # @esbuild/* platform optionalDependencies, which have no scripts.
+  # Denying keeps installs script-free; pnpm 11 errors without a verdict here.
+  esbuild: false
