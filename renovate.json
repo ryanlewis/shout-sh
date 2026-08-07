@@ -1,41 +1,20 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    "schedule:earlyMondays"
-  ],
-  "minimumReleaseAge": "5 days",
-  "internalChecksFilter": "strict",
-  "prCreation": "not-pending",
-  "prHourlyLimit": 2,
-  "prConcurrentLimit": 5,
-  "semanticCommits": "enabled",
-  "semanticCommitScope": null,
-  "vulnerabilityAlerts": {
-    "minimumReleaseAge": "0 days",
-    "schedule": ["at any time"],
-    "labels": ["security"]
-  },
+  "extends": ["github>ryanlewis/renovate-config"],
   "packageRules": [
     {
-      "description": "Group all Cargo updates into one PR",
+      "description": "Cargo on its own PR, separate from the web/ npm tree.",
       "matchManagers": ["cargo"],
       "groupName": "cargo",
+      "groupSlug": "cargo",
       "semanticCommitType": "deps"
     },
     {
-      "description": "Group all npm updates (web/) into one PR",
+      "description": "npm (web/) on its own PR.",
       "matchManagers": ["npm"],
       "groupName": "npm",
+      "groupSlug": "npm",
       "semanticCommitType": "deps"
-    },
-    {
-      "description": "Group all GitHub Actions updates into one PR; auto-merge minor/patch",
-      "matchManagers": ["github-actions"],
-      "groupName": "github actions",
-      "semanticCommitType": "ci",
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
     }
   ]
 }
