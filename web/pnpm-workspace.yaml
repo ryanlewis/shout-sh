@@ -7,8 +7,7 @@ minimumReleaseAge: 10080
 
 # Exemptions where the younger version IS the security fix (remove once aged past 7d):
 minimumReleaseAgeExclude:
-  - js-yaml@4.3.1 # GHSA-5p4m-2wfm-xmqj !!omap backport, published 2026-07-31
-  # Renovate security update: pnpm@11.8.0
+  # Renovate security update: pnpm@11.8.0 (published 2026-08-06, ages out ~2026-08-13)
   - pnpm@11.8.0
 
 allowBuilds:
