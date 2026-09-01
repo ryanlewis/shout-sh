@@ -32,26 +32,25 @@ async fn main() {
     // If METRICS_ADDR is set, serve /__metrics on a second listener bound
     // to that address only. Production ties this to the Tailscale IP so
     // public ingress cannot reach the metrics endpoint.
+    //
+    // Metrics are optional: if the address is bad or the bind fails (e.g.
+    // tailscaled hasn't assigned the IP yet at boot), log it and keep
+    // serving the main app without metrics rather than exiting — a dead
+    // metrics listener must never take shout.sh itself down.
     if let Ok(metrics_addr) = std::env::var("METRICS_ADDR") {
-        match metrics_addr.parse::<SocketAddr>() {
-            Ok(ma) => match tokio::net::TcpListener::bind(ma).await {
-                Ok(ml) => {
-                    eprintln!("shout.sh metrics listening on {ma}");
-                    tokio::spawn(async move {
-                        if let Err(e) = axum::serve(ml, shout_server::metrics_app()).await {
-                            eprintln!("metrics serve error: {e}");
-                        }
-                    });
+        match shout_server::bind_metrics(&metrics_addr).await {
+            Ok(ml) => {
+                match ml.local_addr() {
+                    Ok(ma) => eprintln!("shout.sh metrics listening on {ma}"),
+                    Err(_) => eprintln!("shout.sh metrics listening on {metrics_addr}"),
                 }
-                Err(e) => {
-                    eprintln!("bind metrics {ma} failed: {e}");
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                eprintln!("METRICS_ADDR={metrics_addr} invalid: {e}");
-                std::process::exit(1);
+                tokio::spawn(async move {
+                    if let Err(e) = axum::serve(ml, shout_server::metrics_app()).await {
+                        eprintln!("metrics serve error: {e}");
+                    }
+                });
             }
+            Err(e) => eprintln!("{e}; continuing without metrics"),
         }
     }
 

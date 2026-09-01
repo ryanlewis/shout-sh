@@ -12,6 +12,8 @@
 //! matched axum path (or `/render` for the catch-all banner handler),
 //! never the raw URL.
 
+use std::fmt;
+use std::net::SocketAddr;
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -29,6 +31,7 @@ use prometheus::{
     register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
     register_int_counter_with_registry, register_int_gauge_with_registry,
 };
+use tokio::net::TcpListener;
 
 use shout_core::fonts;
 use shout_core::parser::{Mode, RenderConfig};
@@ -280,6 +283,60 @@ pub async fn track(req: Request, next: Next) -> Response {
 /// interface (e.g. the Tailscale IP) so public ingress cannot reach it.
 pub fn metrics_app() -> Router {
     Router::new().route("/__metrics", get(handler))
+}
+
+/// Why the metrics listener could not be brought up. Both variants are
+/// expected-at-runtime conditions (a typo in `METRICS_ADDR`, or a tailnet
+/// IP that isn't assigned yet at boot) and are logged by `main`, never
+/// treated as fatal — losing metrics must not take the app down with it.
+#[derive(Debug)]
+pub enum MetricsListenError {
+    /// `METRICS_ADDR` did not parse as `ip:port`.
+    Parse {
+        addr: String,
+        source: std::net::AddrParseError,
+    },
+    /// The address parsed but could not be bound (in use, not assigned, …).
+    Bind {
+        addr: SocketAddr,
+        source: std::io::Error,
+    },
+}
+
+impl fmt::Display for MetricsListenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Parse { addr, source } => write!(f, "METRICS_ADDR={addr} invalid: {source}"),
+            Self::Bind { addr, source } => write!(f, "bind metrics {addr} failed: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for MetricsListenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Parse { source, .. } => Some(source),
+            Self::Bind { source, .. } => Some(source),
+        }
+    }
+}
+
+/// Parse `addr` (the `METRICS_ADDR` value) and bind the metrics listener
+/// to it. Returns the bound listener; the caller decides what to serve on
+/// it and, on error, whether to carry on without metrics.
+pub async fn bind_metrics(addr: &str) -> Result<TcpListener, MetricsListenError> {
+    let parsed = addr
+        .parse::<SocketAddr>()
+        .map_err(|source| MetricsListenError::Parse {
+            addr: addr.to_string(),
+            source,
+        })?;
+    TcpListener::bind(parsed)
+        .await
+        .map_err(|source| MetricsListenError::Bind {
+            addr: parsed,
+            source,
+        })
 }
 
 /// `GET /__metrics` — Prometheus text exposition.

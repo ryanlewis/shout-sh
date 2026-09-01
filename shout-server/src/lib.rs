@@ -9,5 +9,5 @@
 mod metrics;
 mod server;
 
-pub use metrics::metrics_app;
+pub use metrics::{MetricsListenError, bind_metrics, metrics_app};
 pub use server::{app, assets, help_text};
