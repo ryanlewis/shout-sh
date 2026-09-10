@@ -9,6 +9,8 @@ minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
   # Renovate security update: pnpm@11.8.0 (published 2026-08-06, ages out ~2026-08-13)
   - pnpm@11.8.0
+  # Renovate security update: vitest@4.1.11
+  - vitest@4.1.11
 
 allowBuilds:
   # esbuild works without its postinstall — the binary ships via the
