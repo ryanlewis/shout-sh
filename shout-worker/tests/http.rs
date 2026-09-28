@@ -524,6 +524,8 @@ fn events_never_carry_user_text() {
         "/rainbow/SECRET",
         "/fonts/SECRET",
         "/presets/SECRET",
+        "/SECRET?preset=SECRET",
+        "/SECRET?color=SECRET",
     ] {
         let e = get(uri).event;
         for blob in e.blobs() {
@@ -553,6 +555,32 @@ fn events_record_kind_font_mode_status() {
 
     let e = get("/health").event;
     assert_eq!(e.kind, None);
-    assert_eq!(e.blobs(), ["/health", "", "", ""]);
+    assert_eq!(e.blobs(), ["/health", "", "", "", "", ""]);
     assert_eq!(e.doubles(7, 0), [200.0, 7.0, 0.0]);
+}
+
+#[test]
+fn events_record_preset_and_error_kind() {
+    let e = get("/presets/ocean").event;
+    assert_eq!((e.preset, e.error), ("ocean", ""));
+
+    let e = get("/hi?preset=sunset").event;
+    assert_eq!(e.preset, "sunset");
+
+    let e = get("/hi?preset=puce").event;
+    assert_eq!((e.status, e.preset, e.error), (400, "", "unknown_preset"));
+
+    let e = get("/presets/puce").event;
+    assert_eq!(e.error, "unknown_preset");
+
+    let e = get("/hi?font=standard").event;
+    assert_eq!(e.error, "unknown_font");
+
+    let e = get("/hi?color=puce").event;
+    assert_eq!(e.error, "unknown_color");
+
+    let e = get("/block/").event;
+    assert_eq!((e.status, e.error), (200, "empty_text"));
+
+    assert_eq!(get("/hi").event.error, "");
 }
