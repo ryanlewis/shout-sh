@@ -70,12 +70,12 @@ function buildOgSvg(bannerRaw) {
 		// trim only leading/trailing empty lines; preserve intra-banner spacing
 		.filter((_, i, a) => {
 			const firstNonEmpty = a.findIndex((l) => l.trim().length > 0);
-			const lastNonEmpty = a.length - 1 - [...a].reverse().findIndex((l) => l.trim().length > 0);
+			const lastNonEmpty =
+				a.length - 1 - [...a].reverse().findIndex((l) => l.trim().length > 0);
 			return i >= firstNonEmpty && i <= lastNonEmpty;
 		});
 
-	const xmlEscape = (s) =>
-		s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const xmlEscape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 	const bannerFontSize = 24;
 	const bannerLineHeight = Math.round(bannerFontSize * 1.15);

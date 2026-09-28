@@ -25,6 +25,13 @@
       "groupName": "npm",
       "groupSlug": "npm",
       "semanticCommitType": "deps"
+    },
+    {
+      "description": "The worker crate and the worker-build CLI ship together from workers-rs and must match, so they bump in one PR. After the cargo rule so this group wins for the worker crate.",
+      "matchDepNames": ["worker", "worker-build"],
+      "groupName": "workers-rs",
+      "groupSlug": "workers-rs",
+      "semanticCommitType": "deps"
     }
   ]
 }

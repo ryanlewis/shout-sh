@@ -69,6 +69,18 @@ jobs:
 
       - run: just ci
 
+      # web/ deps are installed by `just ci` (web-build).
+      - name: check web formatting
+        working-directory: web
+        run: pnpm format:check
+
+      # Runs wrangler dev on localhost with no secrets and no Cloudflare
+      # login. `just ci` has already built web/dist and the Worker and
+      # installed wrangler with --ignore-scripts.
+      - name: smoke test
+        timeout-minutes: 5
+        run: just smoke
+
       # The deploy job ships exactly what was built and tested here. It never
       # runs the build toolchain, so nothing the build ran (build scripts,
       # proc macros, worker-build's downloads) shares a runner with the token.

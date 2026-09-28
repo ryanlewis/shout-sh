@@ -1,3 +1,4 @@
 dist
 node_modules
 src/wasm-pkg
+pnpm-lock.yaml

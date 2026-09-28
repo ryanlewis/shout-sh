@@ -18,7 +18,11 @@
 		<meta name="twitter:description" content="Privacy policy for shout.sh." />
 		<meta name="twitter:image" content="https://shout.sh/og.png" />
 		<link rel="stylesheet" href="/_app/main.css" />
-		<script defer src="https://analytics.rlew.io/script.js" data-website-id="262c65da-7557-48e8-b1ea-6638d3bb6f8c"></script>
+		<script
+			defer
+			src="https://analytics.rlew.io/script.js"
+			data-website-id="262c65da-7557-48e8-b1ea-6638d3bb6f8c"
+		></script>
 	</head>
 	<body>
 		<div id="app">
@@ -30,20 +34,20 @@
 				<section class="doc">
 					<h2>what we collect</h2>
 					<p>
-						Nothing personal. There's no signup, no account, no cookie, no
-						localStorage. shout.sh doesn't remember you between visits.
+						Nothing personal. There's no signup, no account, no cookie, no localStorage.
+						shout.sh doesn't remember you between visits.
 					</p>
 					<p>
-						The text you type into the playground never leaves your browser — the
-						banner you see is rendered locally by a WebAssembly build of the same
-						pipeline the server uses. Typing in the box doesn't hit the network.
+						The text you type into the playground never leaves your browser — the banner
+						you see is rendered locally by a WebAssembly build of the same pipeline the
+						server uses. Typing in the box doesn't hit the network.
 					</p>
 					<p>
-						When you actually <code>curl shout.sh/...</code>, the text you want
-						rendered is part of the request URL — it has to be, that's how curl
-						works. shout.sh runs on Cloudflare Workers. The Worker renders the text
-						and discards it. We don't persist request URLs or bodies beyond the
-						short-lived logs our host, Cloudflare, keeps for abuse prevention.
+						When you actually <code>curl shout.sh/...</code>, the text you want rendered
+						is part of the request URL — it has to be, that's how curl works. shout.sh
+						runs on Cloudflare Workers. The Worker renders the text and discards it. We
+						don't persist request URLs or bodies beyond the short-lived logs our host,
+						Cloudflare, keeps for abuse prevention.
 					</p>
 
 					<h2>analytics</h2>
@@ -51,42 +55,38 @@
 						The web playground at shout.sh runs a self-hosted instance of Umami at
 						<a href="https://analytics.rlew.io">analytics.rlew.io</a> to count page
 						views and see which controls get used — font picks, palette picks,
-						copy-to-clipboard clicks, that sort of thing. Umami does not set
-						cookies, does not follow you across sites, and does not build a profile
-						of you.
+						copy-to-clipboard clicks, that sort of thing. Umami does not set cookies,
+						does not follow you across sites, and does not build a profile of you.
 					</p>
 					<p>
-						The only data recorded per visit is the page URL, the referring URL,
-						your device type, browser, OS, and a one-way-hashed identifier derived
-						from your IP that resets daily. Your raw IP address is never written to
-						disk.
+						The only data recorded per visit is the page URL, the referring URL, your
+						device type, browser, OS, and a one-way-hashed identifier derived from your
+						IP that resets daily. Your raw IP address is never written to disk.
 					</p>
 					<p>
 						Command-line <code>curl</code> calls to shout.sh do not hit Umami — no
 						JavaScript runs there. Only the web playground is instrumented.
 					</p>
 					<p>
-						The server counts requests in Cloudflare Workers Analytics Engine. For
-						each request it records the route pattern (for example
+						The server counts requests in Cloudflare Workers Analytics Engine. For each
+						request it records the route pattern (for example
 						<code>/fonts/{name}</code>, never the URL itself), the response status,
-						whether the render was static, JSON or animated, the font and mode
-						names from the built-in lists, how long the request took, and how many
-						animation frames were sent. It never records the text you asked for, the
-						URL, query values, your IP address or your user agent.
+						whether the render was static, JSON or animated, the font and mode names
+						from the built-in lists, how long the request took, and how many animation
+						frames were sent. It never records the text you asked for, the URL, query
+						values, your IP address or your user agent.
 					</p>
 
 					<h2>third parties</h2>
 					<p>
 						No ads, no remarketing, no affiliate trackers. No Google Analytics, no
-						Facebook Pixel, nothing like that. The only outbound requests the page
-						makes beyond shout.sh itself are to analytics.rlew.io and Google Fonts
-						(for the JetBrains Mono webfont).
+						Facebook Pixel, nothing like that. The only outbound requests the page makes
+						beyond shout.sh itself are to analytics.rlew.io and Google Fonts (for the
+						JetBrains Mono webfont).
 					</p>
 
 					<h2>contact</h2>
-					<p>
-						Questions, corrections, or takedown requests: ryan [at] rlew [dot] io.
-					</p>
+					<p>Questions, corrections, or takedown requests: ryan [at] rlew [dot] io.</p>
 				</section>
 
 				<footer class="foot">
