@@ -12,9 +12,8 @@ real attention.
 
 In scope:
 
-- The HTTP service running at `shout.sh` (and the cross-compiled
-  `shout-server` binary in this repo).
-- The Cloudflare Worker in `worker/` that fronts plain-HTTP traffic.
+- The HTTP service running at `shout.sh`, which is the Cloudflare Worker
+  in `shout-worker/`.
 - The WebAssembly playground served from `shout.sh` (built from
   `shout-wasm` and `web/`).
 
@@ -23,8 +22,8 @@ Out of scope:
 - Reports about the upstream [cfonts] library — please file those with
   cfonts directly.
 - Volumetric DoS or generic load-test results. The service is a tiny
-  free toy on a small VM; it will fall over under enough load and that's
-  not a vulnerability.
+  free toy. Enough load will hit its CPU and plan limits, and that's not
+  a vulnerability.
 - Findings that boil down to "URLs you `curl` are visible in your shell
   history / proxy logs" — that's how curl works and the privacy page
   says so.

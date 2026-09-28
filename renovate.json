@@ -3,7 +3,7 @@
   "extends": ["github>ryanlewis/renovate-config"],
   "customManagers": [
     {
-      "description": "Tool versions pinned as env vars in workflows, marked with a renovate annotation comment. Covers the curl-a-release-tarball installs (just, wasm-pack) that no built-in manager can see.",
+      "description": "Tool versions pinned as env vars in workflows, marked with a renovate annotation comment. Covers the curl-a-release-tarball installs (just, wasm-pack) and the cargo-installed worker-build, which no built-in manager can see.",
       "customType": "regex",
       "managerFilePatterns": ["/\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
@@ -20,7 +20,7 @@
       "semanticCommitType": "deps"
     },
     {
-      "description": "npm (web/) on its own PR.",
+      "description": "npm (web/ and shout-worker/) on its own PR.",
       "matchManagers": ["npm"],
       "groupName": "npm",
       "groupSlug": "npm",

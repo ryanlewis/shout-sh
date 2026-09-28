@@ -1,6 +1,7 @@
 # shout.sh
 
-a tiny http server that renders stylized ascii banners over `curl`.
+a tiny http service that renders stylized ascii banners over `curl`. it
+runs as a cloudflare worker.
 
 ```
 $ curl shout.sh/HELLO
@@ -142,27 +143,48 @@ $ curl -H 'Accept: text/html' shout.sh/   # the playground html
 ## development
 
 ```
-$ just wasm-build   # cfonts → wasm32 via wasm-pack
-$ just web-build    # wasm-build + pnpm build of the ts client
-$ just web-dev      # esbuild watcher for the playground
+$ just wasm-build     # cfonts → wasm32 via wasm-pack, for the playground
+$ just web-build      # wasm-build + pnpm build of the ts client → web/dist/
+$ just worker-install # pinned wrangler into shout-worker/node_modules
+$ just worker-build   # the worker → shout-worker/build/ via worker-build
+$ just dev            # esbuild watcher + wrangler dev on :8787
 ```
 
-the server embeds the built `web/dist/` via `include_bytes!`, so
-`just web-build` must run before `cargo build -p shout-server`.
+needs rust with the `wasm32-unknown-unknown` target, `wasm-pack`,
+`worker-build` (`cargo install worker-build --version =0.8.6 --locked`),
+node and pnpm.
+
+the worker lives in `shout-worker/`. routing, parsing and stream framing are
+plain rust in `src/app.rs` and `src/stream.rs`, so `cargo test --all` covers
+them on the host. `src/glue.rs` is the wasm-only part: it reads the request,
+fetches html, css, js and wasm from workers static assets (`web/dist/`), and
+drives animation frames on a timer.
 
 ## justfile
 
 ```
 $ just              # list targets
-$ just run          # cargo run -p shout-server on :8080
 $ just test         # cargo test --all
-$ just lint         # fmt check + clippy -D warnings
-$ just wasm-build   # wasm-pack build of shout-wasm
-$ just web-build    # wasm-build + pnpm build (regenerates web/dist/)
-$ just ci           # web-build + lint + test + release build
+$ just lint         # fmt check + clippy -D warnings (host and wasm32)
+$ just smoke        # assets, streaming and HEAD through wrangler dev
+$ just parity       # diff https://shout.sh against a running `just dev`
+$ just ci           # web-build + lint + test + worker build
 ```
 
-`PORT` env var overrides the default `8080`.
+## deployment
+
+pushes to `main` deploy through the `deploy` job in
+`.github/workflows/ci.yml`, after ci passes. the ci job uploads the built
+worker and `web/dist/`; the deploy job downloads them and runs
+`wrangler deploy` from `shout-worker/` in the `production` environment, which
+holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. it never builds, so
+the build toolchain never shares a runner with the token. without the token
+the job skips the upload.
+
+`shout-worker/wrangler.toml` sets the routes (`shout.sh/*`, `www.shout.sh/*`),
+a per-request cpu limit (needs the workers paid plan) and the
+`SHOUT_EVENTS` analytics engine dataset. `src/event.rs` documents its
+columns.
 
 ## license
 

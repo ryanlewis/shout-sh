@@ -41,9 +41,9 @@
 					<p>
 						When you actually <code>curl shout.sh/...</code>, the text you want
 						rendered is part of the request URL — it has to be, that's how curl
-						works. The server renders it and discards it. We don't persist request
-						URLs or bodies beyond the short-lived access logs our host keeps for
-						abuse prevention.
+						works. shout.sh runs on Cloudflare Workers. The Worker renders the text
+						and discards it. We don't persist request URLs or bodies beyond the
+						short-lived logs our host, Cloudflare, keeps for abuse prevention.
 					</p>
 
 					<h2>analytics</h2>
@@ -64,6 +64,15 @@
 					<p>
 						Command-line <code>curl</code> calls to shout.sh do not hit Umami — no
 						JavaScript runs there. Only the web playground is instrumented.
+					</p>
+					<p>
+						The server counts requests in Cloudflare Workers Analytics Engine. For
+						each request it records the route pattern (for example
+						<code>/fonts/{name}</code>, never the URL itself), the response status,
+						whether the render was static, JSON or animated, the font and mode
+						names from the built-in lists, how long the request took, and how many
+						animation frames were sent. It never records the text you asked for, the
+						URL, query values, your IP address or your user agent.
 					</p>
 
 					<h2>third parties</h2>

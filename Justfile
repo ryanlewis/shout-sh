@@ -1,15 +1,14 @@
 default:
     @just --list
 
-run:
-    cargo run -p shout-server
-
 test:
     cargo test --all
 
 lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
+    # The Worker glue only compiles for wasm32, so lint that target too.
+    RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo clippy -p shout-worker --target wasm32-unknown-unknown -- -D warnings
 
 fmt:
     cargo fmt --all
@@ -33,21 +32,34 @@ web-build: wasm-build
 web-dev:
     cd web && pnpm dev
 
-# Run everything needed for local dev: esbuild in watch mode alongside the
-# Rust server. Ctrl-C stops both. Server assets are `include_bytes!`'d from
-# web/dist/, so to pick up a frontend change restart the server (the build
-# script's rerun-if-changed on ../web/dist triggers a fast rebuild).
-dev: wasm-build
+# Install the pinned wrangler. No install scripts run.
+worker-install:
+    cd shout-worker && pnpm install --frozen-lockfile --ignore-scripts
+
+# Build the Worker (shout-worker/build/) with worker-build.
+worker-build:
+    cd shout-worker && RUSTFLAGS='--cfg getrandom_backend="wasm_js"' worker-build --release
+
+# Run the Worker locally on :8787 with esbuild in watch mode alongside.
+# Ctrl-C stops both. wrangler serves web/dist/ as it changes; a Rust change
+# needs a restart of `just dev`.
+dev: wasm-build worker-install worker-build
     #!/usr/bin/env bash
     set -euo pipefail
     trap 'kill 0' EXIT INT TERM
     (cd web && pnpm dev) &
-    # Give esbuild a moment to produce the first dist/ so the server build
-    # script doesn't trip its missing-asset gate on the first `cargo run`.
-    # esbuild writes manifest.txt last, so it's the all-clear for the server build.
-    while [ ! -f web/dist/index.html ] || [ ! -f web/dist/og.png ] || [ ! -f web/dist/_app/manifest.txt ]; do sleep 0.1; done
-    cargo run -p shout-server
+    # esbuild stamps index.html last, so it is the all-clear for assets.
+    while [ ! -f web/dist/index.html ]; do sleep 0.1; done
+    cd shout-worker && ./node_modules/.bin/wrangler dev
 
-# Full CI: rebuild web assets, then run lints + tests + release build.
-ci: web-build lint test
-    cargo build --release -p shout-server
+# Check assets, streaming and HEAD through `wrangler dev`. Needs web-build,
+# worker-install and worker-build first (`just ci` does all three).
+smoke:
+    scripts/smoke.sh
+
+# Diff the live site against a running `just dev`, path by path.
+parity:
+    scripts/parity.sh
+
+# Full CI: rebuild web assets, then run lints + tests + the Worker build.
+ci: web-build lint test worker-install worker-build
