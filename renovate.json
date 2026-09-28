@@ -25,12 +25,6 @@
       "groupName": "npm",
       "groupSlug": "npm",
       "semanticCommitType": "deps"
-    },
-    {
-      "description": "worker (Cargo.toml) and worker-build (ci.yml) move together: worker-build checks the worker crate's wasm-bindgen version.",
-      "matchPackageNames": ["worker", "worker-build"],
-      "groupName": "workers-rs",
-      "groupSlug": "workers-rs"
     }
   ]
 }

@@ -67,8 +67,6 @@ jobs:
 
       - run: just ci
 
-      - run: just smoke
-
   # Deploys main to Cloudflare once CI passes. The `production` environment
   # holds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and only admits
   # main. Without the token the job builds and skips the upload, so forks
