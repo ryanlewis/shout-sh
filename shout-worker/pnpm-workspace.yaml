@@ -1,0 +1,11 @@
+# Same release-age gate as web/: only resolve versions published at least
+# 7 days ago, so a compromised release has time to be pulled.
+minimumReleaseAge: 10080
+
+allowBuilds:
+  # wrangler's native deps ship their binaries through per-platform
+  # optionalDependencies, which have no scripts. Denying keeps installs
+  # script-free; pnpm 11 errors without a verdict here.
+  esbuild: false
+  sharp: false
+  workerd: false

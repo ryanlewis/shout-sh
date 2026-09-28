@@ -1,6 +1,6 @@
 // esbuild driver for the shout.sh playground. Bundles TS + CSS, hashes the
 // runtime-fetched wasm, stamps the hashed filenames into the HTML, and lays
-// out a flat dist/ that the Rust server embeds via build.rs.
+// out a flat dist/ that the Worker serves through Workers Static Assets.
 
 import { context, build } from 'esbuild';
 import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
@@ -143,7 +143,7 @@ async function stampHtml(replacements) {
 	}
 }
 
-async function applyBuildResult(result, wasmName) {
+async function applyBuildResult(result) {
 	const named = emittedNames(result.metafile);
 	const jsName = named['main.ts'];
 	const cssName = named['styles.css'];
@@ -154,10 +154,6 @@ async function applyBuildResult(result, wasmName) {
 		'/_app/main.js': `${APP_URL_PREFIX}/${jsName}`,
 		'/_app/main.css': `${APP_URL_PREFIX}/${cssName}`,
 	});
-	// Manifest of canonical → hashed names. shout-server/build.rs reads
-	// this so the Rust side never has to pattern-match output filenames.
-	const manifest = `main_js=${jsName}\nmain_css=${cssName}\nwasm_bg=${wasmName}\n`;
-	await writeFile(join(distApp, 'manifest.txt'), manifest);
 }
 
 await clean();
@@ -170,7 +166,7 @@ if (watch) {
 		name: 'stamp-hashed-html',
 		setup(build) {
 			build.onEnd(async (result) => {
-				if (result.metafile) await applyBuildResult(result, wasmName);
+				if (result.metafile) await applyBuildResult(result);
 			});
 		},
 	};
@@ -179,5 +175,5 @@ if (watch) {
 	console.log('esbuild watching…');
 } else {
 	const result = await build(makeEsbuildOpts(wasmUrl));
-	await applyBuildResult(result, wasmName);
+	await applyBuildResult(result);
 }

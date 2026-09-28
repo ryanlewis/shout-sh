@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shout-core", "shout-server", "shout-wasm"]
+members = ["shout-core", "shout-server", "shout-wasm", "shout-worker"]
 
 [workspace.package]
 version = "0.1.1"

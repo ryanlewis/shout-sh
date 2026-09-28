@@ -1,0 +1,41 @@
+# The name is historical. This Worker used to proxy shout.sh to a VM.
+# Deploying under the same name replaces it in place: the routes stay, no
+# DNS change is needed, and `wrangler rollback` returns to the proxy.
+name = "shout-sh-proxy"
+# Built by `just worker-build`, not by wrangler. There is no [build]
+# command on purpose: `wrangler deploy` in CI holds the Cloudflare token,
+# and the Rust build (build scripts, proc macros) must not run with it.
+main = "build/index.js"
+compatibility_date = "2026-09-18"
+# Aborts request.signal when the client disconnects, which ends the
+# animation stream. See disconnected() in src/glue.rs.
+compatibility_flags = ["enable_request_signal"]
+workers_dev = false
+
+routes = [
+  { pattern = "shout.sh/*", zone_name = "shout.sh" },
+  { pattern = "www.shout.sh/*", zone_name = "shout.sh" },
+]
+
+# web/dist from `just web-build`. The Worker runs first on every request
+# so it can pick HTML or plain text on /, /about and /privacy; it fetches
+# files through the ASSETS binding and sets the cache headers itself.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+# One data point per request. See src/event.rs for the column layout.
+[[analytics_engine_datasets]]
+binding = "SHOUT_EVENTS"
+dataset = "shout_events"
+
+# CPU time, not wall time: waiting between frames is free. The heaviest
+# stream (huge font, 200 chars across 9 lines, 30fps for 300s) measured
+# about 2.1ms per frame, so 9000 frames is about 20s. 45s leaves room for
+# slower server cores and still stops one request running up a bill.
+# Typical streams use well under 1s. Needs the Workers Paid plan.
+[limits]
+cpu_ms = 45000

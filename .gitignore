@@ -9,8 +9,10 @@
 /web/dist/
 /web/node_modules/
 
-# Cloudflare Worker (wrangler) local state
-/worker/.wrangler/
+# Cloudflare Worker: wrangler state, worker-build output, wrangler install
+/shout-worker/.wrangler/
+/shout-worker/build/
+/shout-worker/node_modules/
 
 # IDE / editor
 .idea/

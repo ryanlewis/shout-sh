@@ -14,6 +14,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # renovate: datasource=crate depName=worker-build
+  WORKER_BUILD_VERSION: 0.8.6
+
 jobs:
   ci:
     name: just ci
@@ -58,4 +62,81 @@ jobs:
             | tar xz --strip-components=1 -C /usr/local/bin \
                 "wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack"
 
+      - name: install worker-build
+        run: cargo install worker-build --version "=${WORKER_BUILD_VERSION}" --locked
+
       - run: just ci
+
+      - run: just smoke
+
+  # Deploys main to Cloudflare once CI passes. The `production` environment
+  # holds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and only admits
+  # main. Without the token the job builds and skips the upload, so forks
+  # and a fresh setup stay green.
+  deploy:
+    name: deploy
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          package_json_file: web/package.json
+          run_install: false
+
+      - name: install just
+        env:
+          # renovate: datasource=github-releases depName=casey/just
+          JUST_VERSION: 1.58.0
+        run: |
+          curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | sudo tar xz -C /usr/local/bin just
+
+      - name: install wasm-pack
+        env:
+          # renovate: datasource=github-releases depName=rustwasm/wasm-pack
+          WASM_PACK_VERSION: v0.15.0
+        run: |
+          curl -fsSL "https://github.com/rustwasm/wasm-pack/releases/download/${WASM_PACK_VERSION}/wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xz --strip-components=1 -C /usr/local/bin \
+                "wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack"
+
+      - name: install worker-build
+        run: cargo install worker-build --version "=${WORKER_BUILD_VERSION}" --locked
+
+      # No secrets in env for installs or builds.
+      - name: build
+        run: just web-build worker-install worker-build
+
+      - name: deploy
+        if: env.HAS_CLOUDFLARE_TOKEN == 'true'
+        working-directory: shout-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./node_modules/.bin/wrangler deploy
+
+      - name: note skipped deploy
+        if: env.HAS_CLOUDFLARE_TOKEN != 'true'
+        run: echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipped wrangler deploy."
