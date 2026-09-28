@@ -79,20 +79,24 @@ impl Reply {
 
 pub fn handle(req: &Request) -> Reply {
     let path = req.path;
+    // (route pattern, path parameter or "")
     let named = match path {
-        "/" => Some("/"),
-        "/health" => Some("/health"),
-        "/favicon.ico" => Some("/favicon.ico"),
-        "/favicon.svg" => Some("/favicon.svg"),
-        "/og.png" => Some("/og.png"),
-        "/fonts" => Some("/fonts"),
-        "/presets" => Some("/presets"),
-        _ if param(path, "/fonts/").is_some() => Some("/fonts/{name}"),
-        _ if param(path, "/presets/").is_some() => Some("/presets/{name}"),
-        _ if param(path, "/_app/").is_some() => Some("/_app/{file}"),
-        _ => None,
+        "/" => Some(("/", "")),
+        "/health" => Some(("/health", "")),
+        "/favicon.ico" => Some(("/favicon.ico", "")),
+        "/favicon.svg" => Some(("/favicon.svg", "")),
+        "/og.png" => Some(("/og.png", "")),
+        "/fonts" => Some(("/fonts", "")),
+        "/presets" => Some(("/presets", "")),
+        _ => [
+            ("/fonts/", "/fonts/{name}"),
+            ("/presets/", "/presets/{name}"),
+            ("/_app/", "/_app/{file}"),
+        ]
+        .into_iter()
+        .find_map(|(prefix, route)| Some((route, param(path, prefix)?))),
     };
-    let Some(route) = named else {
+    let Some((route, arg)) = named else {
         let mut reply = render_fallback(req);
         // A HEAD response has no body, but the runtime would still wait
         // for the whole stream before sending the headers.
@@ -123,9 +127,9 @@ pub fn handle(req: &Request) -> Reply {
         "/og.png" => static_asset(route, "image/png"),
         "/fonts" => plain(route, FONTS_BODY.clone()),
         "/presets" => plain(route, PRESETS_BODY.clone()),
-        "/fonts/{name}" => font_preview(&decode(param(path, "/fonts/").unwrap_or_default())),
-        "/presets/{name}" => preset_preview(&decode(param(path, "/presets/").unwrap_or_default())),
-        _ => app_asset(&decode(param(path, "/_app/").unwrap_or_default())),
+        "/fonts/{name}" => font_preview(&decode(arg)),
+        "/presets/{name}" => preset_preview(&decode(arg)),
+        _ => app_asset(&decode(arg)),
     }
 }
 
@@ -178,7 +182,11 @@ fn not_found(route: &'static str) -> Reply {
 
 fn app_asset(file: &str) -> Reply {
     const ROUTE: &str = "/_app/{file}";
-    if file.len() > MAX_PARAM_LEN {
+    // Hashed esbuild names only use these characters. Anything else could
+    // change meaning once the name goes back into a URL for the ASSETS
+    // binding: a decoded `?` or `#` cuts the path short, `../` leaves _app.
+    let safe = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-');
+    if file.len() > MAX_PARAM_LEN || !file.bytes().all(safe) {
         return not_found(ROUTE);
     }
     // Only the types esbuild emits are served. Anything else in dist/_app

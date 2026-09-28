@@ -448,6 +448,21 @@ fn app_asset_over_param_cap_is_404() {
 }
 
 #[test]
+fn app_asset_rejects_names_that_change_the_asset_url() {
+    // Decoded, these would become `?`, `#` or `../` in the ASSETS URL.
+    for file in [
+        "main-ABC123.js%3F.css",
+        "x%23.js",
+        "..%2Fsecret.js",
+        "a%20b.js",
+    ] {
+        let r = get(&format!("/_app/{file}"));
+        assert_eq!(r.status, 404, "{file}");
+        assert!(matches!(r.body, Body::Empty), "{file}");
+    }
+}
+
+#[test]
 fn app_asset_nested_path_falls_through_to_render() {
     // `/_app/{file}` is one segment, as it was in axum.
     let r = get("/_app/a/b.js");

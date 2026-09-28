@@ -174,10 +174,12 @@ $ just ci           # web-build + lint + test + worker build
 ## deployment
 
 pushes to `main` deploy through the `deploy` job in
-`.github/workflows/ci.yml`, after ci passes. it runs `wrangler deploy` from
-`shout-worker/` in the `production` environment, which holds
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. without the token the job
-builds and skips the upload.
+`.github/workflows/ci.yml`, after ci passes. the ci job uploads the built
+worker and `web/dist/`; the deploy job downloads them and runs
+`wrangler deploy` from `shout-worker/` in the `production` environment, which
+holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. it never builds, so
+the build toolchain never shares a runner with the token. without the token
+the job skips the upload.
 
 `shout-worker/wrangler.toml` sets the routes (`shout.sh/*`, `www.shout.sh/*`),
 a per-request cpu limit (needs the workers paid plan) and the

@@ -7,9 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Superseded PR runs are cancelled. Runs on main queue instead, so a new
+# push never kills a deploy half way through.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -67,10 +69,24 @@ jobs:
 
       - run: just ci
 
+      # The deploy job ships exactly what was built and tested here. It never
+      # runs the build toolchain, so nothing the build ran (build scripts,
+      # proc macros, worker-build's downloads) shares a runner with the token.
+      - name: upload worker bundle
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worker-bundle
+          path: |
+            shout-worker/build/
+            web/dist/
+          if-no-files-found: error
+          retention-days: 1
+
   # Deploys main to Cloudflare once CI passes. The `production` environment
   # holds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and only admits
-  # main. Without the token the job builds and skips the upload, so forks
-  # and a fresh setup stay green.
+  # main. Without the token the job skips the upload, so forks and a fresh
+  # setup stay green.
   deploy:
     name: deploy
     needs: ci
@@ -83,16 +99,10 @@ jobs:
     env:
       HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
+      # For wrangler.toml and the wrangler lockfile only; nothing is built.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
-
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -100,32 +110,18 @@ jobs:
 
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
         with:
-          package_json_file: web/package.json
+          package_json_file: shout-worker/package.json
           run_install: false
 
-      - name: install just
-        env:
-          # renovate: datasource=github-releases depName=casey/just
-          JUST_VERSION: 1.58.0
-        run: |
-          curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            | sudo tar xz -C /usr/local/bin just
+      # No secrets in env for the install. No install scripts run.
+      - name: install wrangler
+        working-directory: shout-worker
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: install wasm-pack
-        env:
-          # renovate: datasource=github-releases depName=rustwasm/wasm-pack
-          WASM_PACK_VERSION: v0.15.0
-        run: |
-          curl -fsSL "https://github.com/rustwasm/wasm-pack/releases/download/${WASM_PACK_VERSION}/wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            | tar xz --strip-components=1 -C /usr/local/bin \
-                "wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack"
-
-      - name: install worker-build
-        run: cargo install worker-build --version "=${WORKER_BUILD_VERSION}" --locked
-
-      # No secrets in env for installs or builds.
-      - name: build
-        run: just web-build worker-install worker-build
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: worker-bundle
+          path: .
 
       - name: deploy
         if: env.HAS_CLOUDFLARE_TOKEN == 'true'

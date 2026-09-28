@@ -14,7 +14,8 @@ use std::time::Duration;
 
 use futures_util::future::{Either, select};
 use futures_util::stream;
-use worker::js_sys::Promise;
+use worker::js_sys::{Function, Promise};
+use worker::wasm_bindgen::JsValue;
 use worker::wasm_bindgen_futures::JsFuture;
 use worker::web_sys::AbortSignal;
 use worker::{
@@ -50,19 +51,44 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     respond(reply, &env, sink, start, req.inner().signal()).await
 }
 
-/// Resolves when the client disconnects. `request.signal` fires on
-/// disconnect (the `enable_request_signal` compatibility flag). Once the
+/// `future` resolves when the client disconnects. `request.signal` fires
+/// on disconnect (the `enable_request_signal` compatibility flag). Once the
 /// client is gone the runtime stops pulling the body but never cancels it,
 /// so without this the stream state would sit in memory until the isolate
 /// is recycled.
-fn disconnected(signal: AbortSignal) -> JsFuture {
-    JsFuture::from(Promise::new(&mut |resolve, _| {
+struct Disconnect {
+    signal: AbortSignal,
+    resolve: Function,
+    future: JsFuture,
+}
+
+impl Disconnect {
+    fn new(signal: AbortSignal) -> Self {
+        let mut resolve = None;
+        // The executor runs synchronously, so `resolve` is set on return.
+        let promise = Promise::new(&mut |res, _| resolve = Some(res));
+        let resolve = resolve.expect("Promise executor runs synchronously");
         if signal.aborted() {
-            let _ = resolve.call0(&resolve);
+            let _ = resolve.call0(&JsValue::UNDEFINED);
         } else {
             signal.set_onabort(Some(&resolve));
         }
-    }))
+        Self {
+            signal,
+            resolve,
+            future: JsFuture::from(promise),
+        }
+    }
+}
+
+impl Drop for Disconnect {
+    /// A stream that ends on its own leaves the promise pending, and a
+    /// `JsFuture` frees its callbacks only once its promise settles.
+    /// Settle it here so they do not outlive the request.
+    fn drop(&mut self) {
+        self.signal.set_onabort(None);
+        let _ = self.resolve.call0(&JsValue::UNDEFINED);
+    }
 }
 
 async fn respond(
@@ -86,14 +112,14 @@ async fn respond(
         Body::Empty => Response::empty()?,
         Body::Text(s) => Response::from_bytes(s.into_bytes())?,
         Body::Asset(path) => match fetch_asset(env, &path).await {
-            Some(body) => Response::from_body(body)?,
-            None => {
-                // The asset is missing from web/dist: the request asked
-                // for a hashed name that no longer exists, or the build
-                // shipped without it. Same bare 404 the old server gave.
-                event.status = 404;
+            Ok(body) => Response::from_body(body)?,
+            Err(code) => {
+                // 404: the request asked for a hashed name that no longer
+                // exists, or the build shipped without it. Same bare 404
+                // the old server gave. 502: the binding itself failed.
+                event.status = code;
                 write_event(sink.as_ref(), &event, start, 0);
-                return Ok(Response::empty()?.with_status(404));
+                return Ok(Response::empty()?.with_status(code));
             }
         },
         Body::Stream(anim) => {
@@ -103,7 +129,7 @@ async fn respond(
                 sink,
                 event,
                 start,
-                disconnect: disconnected(signal),
+                disconnect: Disconnect::new(signal),
             };
             let resp = Response::from_stream(stream::unfold(state, next_chunk))?;
             return Ok(resp.with_status(status).with_headers(out));
@@ -113,28 +139,33 @@ async fn respond(
     Ok(resp.with_status(status).with_headers(out))
 }
 
-/// Fetch `path` from Workers Static Assets. `None` for anything but a 200.
-async fn fetch_asset(env: &Env, path: &str) -> Option<ResponseBody> {
-    let assets = env.assets(ASSETS_BINDING).ok()?;
+/// Fetch `path` from Workers Static Assets. The error is the status to
+/// reply with: 404 when the file is not there, 502 when the binding fails.
+async fn fetch_asset(env: &Env, path: &str) -> std::result::Result<ResponseBody, u16> {
+    let assets = env.assets(ASSETS_BINDING).map_err(|_| 502u16)?;
     // The host is ignored by the assets binding; only the path matters.
     let resp = assets
         .fetch(format!("https://assets.invalid{path}"), None)
         .await
-        .ok()?;
-    (resp.status_code() == 200).then(|| resp.body().clone())
+        .map_err(|_| 502u16)?;
+    match resp.status_code() {
+        200 => Ok(resp.body().clone()),
+        404 => Err(404),
+        _ => Err(502),
+    }
 }
 
 /// Per-stream state. Dropping it writes the analytics data point, so the
 /// frame count is recorded whether the stream timed out or the client
-/// went away. The runtime cancels the response body when the client
-/// disconnects, which drops this state and the pending `Delay` with it.
+/// went away. On disconnect `next_chunk` stops waiting and returns `None`,
+/// which drops this state and clears the pending `Delay`'s timer.
 struct StreamState {
     anim: Animation,
     frames: u64,
     sink: Option<AnalyticsEngineDataset>,
     event: Event,
     start: u64,
-    disconnect: JsFuture,
+    disconnect: Disconnect,
 }
 
 impl Drop for StreamState {
@@ -152,7 +183,7 @@ async fn next_chunk(mut st: StreamState) -> Option<(Result<Vec<u8>>, StreamState
             }
             Step::Wait(ms) => {
                 let delay = Delay::from(Duration::from_millis(ms));
-                if let Either::Right(_) = select(delay, &mut st.disconnect).await {
+                if let Either::Right(_) = select(delay, &mut st.disconnect.future).await {
                     // Returning None drops `st`, which writes the event.
                     return None;
                 }
