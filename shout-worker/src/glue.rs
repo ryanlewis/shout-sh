@@ -64,28 +64,30 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         user_agent: user_agent.as_deref(),
     };
     let client_ip = headers.get("cf-connecting-ip")?;
-    let reply = match app::rate_limit(&areq) {
-        Some((limit, route)) if !allowed(&env, limit, client_ip.as_deref()).await => {
-            app::too_many_requests(limit, route)
+    let plan = app::plan(&areq);
+    // Built first, so every path from here on drops it and gives back
+    // any slot taken below.
+    let mut end = StreamEnd { ctx, slot: None };
+    let reply = match (plan.limit(), plan.stream_timeout_ms(), client_ip.as_deref()) {
+        (Some((limit, route)), _, ip) if !allowed(&env, limit, ip).await => {
+            app::too_many_requests(limit, route, app::RETRY_AFTER)
         }
-        _ => app::handle(&areq),
-    };
-    let mut slot = None;
-    let reply = match (&reply.body, client_ip.as_deref()) {
-        (Body::Stream(anim), Some(ip)) => {
-            match acquire_slot(&env, ip, slots::lease_ms(anim.timeout_ms())).await {
+        // Before `reply`, so a refused stream renders nothing.
+        (Some((_, route)), Some(timeout_ms), Some(ip)) => {
+            match acquire_slot(&env, ip, slots::lease_ms(timeout_ms)).await {
                 SlotOutcome::Held(held) => {
-                    slot = Some(held);
-                    reply
+                    end.slot = Some(held);
+                    plan.reply()
                 }
-                SlotOutcome::Refused(retry_after) => app::too_many_streams(retry_after),
-                SlotOutcome::Open => reply,
+                SlotOutcome::Refused(retry_after) => {
+                    app::too_many_requests(Limit::StreamSlots, route, retry_after)
+                }
+                SlotOutcome::Open => plan.reply(),
             }
         }
-        _ => reply,
+        _ => plan.reply(),
     };
     let sink = env.analytics_engine(EVENTS_BINDING).ok();
-    let end = StreamEnd { ctx, slot };
     respond(reply, &env, sink, start, req.inner().signal(), end).await
 }
 
@@ -207,7 +209,9 @@ fn slot_url(call: Call) -> String {
 }
 
 /// Gives back the stream's slot, if it holds one, when dropped: when the
-/// stream ends, or when the reply fails before the stream starts.
+/// stream ends or the client disconnects, when the reply is not a stream
+/// after all (a render error), or when the reply fails before the stream
+/// starts.
 struct StreamEnd {
     ctx: Context,
     slot: Option<HeldSlot>,

@@ -19,7 +19,7 @@ use percent_encoding::percent_decode_str;
 use shout_core::fonts;
 use shout_core::parser::{MAX_PARAM_LEN, MAX_URL_LEN, RenderConfig, parse};
 use shout_core::presets;
-use shout_core::render::{RenderError, banner, render_config};
+use shout_core::render::{self, RenderError, banner, render_config};
 
 use crate::event::{Event, ROUTE_RENDER, RenderKind};
 use crate::slots;
@@ -82,19 +82,118 @@ impl Reply {
     }
 }
 
+/// The reply to `req` when no limit refuses it. The Worker calls `plan`
+/// and `Plan::reply` itself, with the limit checks in between.
 pub fn handle(req: &Request) -> Reply {
-    if !method_allowed(req) {
-        return method_not_allowed(req);
-    }
-    let Some((route, arg)) = named_route(req.path) else {
-        let mut reply = render_fallback(req);
-        // A HEAD response has no body, but the runtime would still wait
-        // for the whole stream before sending the headers.
-        if req.method == "HEAD" && matches!(reply.body, Body::Stream(_)) {
-            reply.body = Body::Empty;
-        }
-        return reply;
+    plan(req).reply()
+}
+
+/// What happens to a request, decided before anything is rendered: the
+/// method check, the rate limit, and whether the reply is a stream.
+#[derive(Debug)]
+pub struct Plan<'a> {
+    req: Request<'a>,
+    target: Target<'a>,
+}
+
+/// Where a request goes. Parsed once, by `plan`; `Plan::reply` renders
+/// from it, so the limit and the reply cannot disagree.
+#[derive(Debug)]
+enum Target<'a> {
+    /// Any method but GET and HEAD: every route only reads. Holds the
+    /// route the 405 records.
+    NotAllowed(&'static str),
+    /// A named route, as (route pattern, path parameter or "").
+    Named(&'static str, &'a str),
+    /// No named route matched; the banner renderer handles it.
+    Fallback(Fallback),
+}
+
+/// Plan `req`. This is the only method check, and the only parse of a
+/// banner request. It must not render anything: it runs before any
+/// limit is checked.
+pub fn plan<'a>(req: &Request<'a>) -> Plan<'a> {
+    let target = if !matches!(req.method, "GET" | "HEAD") {
+        Target::NotAllowed(method_route(req.path))
+    } else if let Some((route, arg)) = named_route(req.path) {
+        Target::Named(route, arg)
+    } else {
+        Target::Fallback(fallback(req))
     };
+    Plan { req: *req, target }
+}
+
+impl Plan<'_> {
+    /// Which rate limit applies, and the route to record if it refuses the
+    /// request. `None` means the request is exempt: the health check, and
+    /// the files a browser loads with every page, when fetched with GET or
+    /// HEAD. Any other method counts against the general limit: it gets a
+    /// 405 without rendering, but still costs a Worker call and an
+    /// analytics write.
+    pub fn limit(&self) -> Option<(Limit, &'static str)> {
+        match &self.target {
+            &Target::NotAllowed(route) => Some((Limit::General, route)),
+            Target::Named(
+                "/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}",
+                _,
+            ) => None,
+            &Target::Named(route, _) => Some((Limit::General, route)),
+            // Invalid or not, as the stream limit always counted them.
+            Target::Fallback(_) if self.animation().is_some() => {
+                Some((Limit::Stream, ROUTE_RENDER))
+            }
+            &Target::Fallback(Fallback::Page(route, _)) => Some((Limit::General, route)),
+            Target::Fallback(_) => Some((Limit::General, ROUTE_RENDER)),
+        }
+    }
+
+    /// For an animation stream, the timeout the request asked for, in ms.
+    /// The stream slot's lease is sized from it. `stream::cap` can only
+    /// lower the timeout, never raise it, so this is an upper bound, and
+    /// the slot can be checked before `reply` renders frame 0.
+    pub fn stream_timeout_ms(&self) -> Option<u64> {
+        // An animation that fails validation gets its error reply from
+        // `reply` (a 400, or a 200 for empty text), so it takes no slot
+        // and keeps that reply even when the slots are full.
+        self.animation()
+            .filter(|cfg| render::check(cfg).is_ok())
+            .map(|cfg| u64::from(cfg.timeout) * 1000)
+    }
+
+    /// The config of an animation request. HEAD never streams; see
+    /// `reply`. An animation that fails validation (an unknown font, say)
+    /// is still one here, and gets its error reply from `reply`.
+    fn animation(&self) -> Option<&RenderConfig> {
+        match &self.target {
+            Target::Fallback(Fallback::Render(cfg))
+                if self.req.method != "HEAD" && cfg.should_animate() =>
+            {
+                Some(cfg)
+            }
+            _ => None,
+        }
+    }
+
+    /// Route the request and build its reply. This renders any banner.
+    pub fn reply(&self) -> Reply {
+        match &self.target {
+            &Target::NotAllowed(route) => method_not_allowed(route),
+            &Target::Named(route, arg) => serve(&self.req, route, arg),
+            Target::Fallback(fb) => {
+                let mut reply = render_fallback(fb);
+                // A HEAD response has no body, but the runtime would still
+                // wait for the whole stream before sending the headers.
+                if self.req.method == "HEAD" && matches!(reply.body, Body::Stream(_)) {
+                    reply.body = Body::Empty;
+                }
+                reply
+            }
+        }
+    }
+}
+
+/// The reply for a named route.
+fn serve(req: &Request, route: &'static str, arg: &str) -> Reply {
     match route {
         "/" if accepts_html(req) => html_page("/", "/index.html"),
         "/" => plain("/", HELP.clone()),
@@ -125,8 +224,9 @@ pub enum Limit {
     /// for up to 300s and sends up to `stream::MAX_STREAM_BYTES`.
     Stream,
     /// Too many animation streams open at once. Not a `[[ratelimits]]`
-    /// binding and never returned by `rate_limit`: the `StreamSlots`
-    /// Durable Object applies it, see `slots` and `too_many_streams`.
+    /// binding and never returned by `Plan::limit`: the `StreamSlots`
+    /// Durable Object applies it, see `slots` and
+    /// `Plan::stream_timeout_ms`.
     StreamSlots,
 }
 
@@ -144,45 +244,26 @@ impl Limit {
 
 /// Seconds a refused client should wait. Both bindings count over a 60s
 /// window (`period = 60` in wrangler.toml), so a minute always clears it.
-pub const RETRY_AFTER: &str = "60";
+pub const RETRY_AFTER: u64 = 60;
 
-/// Which rate limit applies to `req`, and the route to record if the
-/// request is refused. `None` means the request is exempt: the health
-/// check, and the files a browser loads with every page.
-///
-/// This runs before `handle`, so it must not render anything. It shares
-/// `fallback` with `render_fallback` to tell a stream from a static banner.
-/// A method other than GET or HEAD is exempt too: `handle` refuses it with
-/// a 405 without rendering, so it should not use up the client's limit.
-pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
-    if !method_allowed(req) {
-        return None;
-    }
-    match named_route(req.path) {
-        Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => None,
-        Some((route, _)) => Some((Limit::General, route)),
-        None => match fallback(req) {
-            Fallback::TooLong => Some((Limit::General, ROUTE_RENDER)),
-            Fallback::Page(route, _) => Some((Limit::General, route)),
-            // HEAD never streams; see `handle`.
-            Fallback::Render(cfg) if req.method != "HEAD" && cfg.should_animate() => {
-                Some((Limit::Stream, ROUTE_RENDER))
-            }
-            Fallback::Render(_) => Some((Limit::General, ROUTE_RENDER)),
-        },
-    }
-}
-
-/// The reply for a client over `limit`. Plain text for browsers too:
-/// an HTML page would cost more to serve than the request it refuses.
-pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
+/// The reply for a client that `limit` refused, recorded under `route`.
+/// `retry_after` is in seconds. Plain text for browsers too: an HTML page
+/// would cost more to serve than the request it refuses.
+pub fn too_many_requests(limit: Limit, route: &'static str, retry_after: u64) -> Reply {
+    let body = match limit {
+        Limit::StreamSlots => format!(
+            "too many open streams. at most {} at a time; close one and try again.\n",
+            slots::MAX_STREAMS
+        ),
+        Limit::General | Limit::Stream => "too many requests. try again in a minute.\n".into(),
+    };
     Reply {
         status: 429,
         headers: vec![
             ("content-type", TEXT_PLAIN.into()),
-            ("retry-after", RETRY_AFTER.into()),
+            ("retry-after", retry_after.to_string().into()),
         ],
-        body: Body::Text("too many requests. try again in a minute.\n".into()),
+        body: Body::Text(body),
         event: Event {
             error: limit.reason(),
             ..Event::route(route, 429)
@@ -190,13 +271,16 @@ pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
     }
 }
 
-/// Every route only reads, so only GET and HEAD are served.
-fn method_allowed(req: &Request) -> bool {
-    matches!(req.method, "GET" | "HEAD")
+/// The route a 405 records: the named route or browser page `path`
+/// matches, or `/render`.
+fn method_route(path: &str) -> &'static str {
+    named_route(path)
+        .map(|(route, _)| route)
+        .or_else(|| browser_page(path).map(|(route, _)| route))
+        .unwrap_or(ROUTE_RENDER)
 }
 
-fn method_not_allowed(req: &Request) -> Reply {
-    let route = named_route(req.path).map_or(ROUTE_RENDER, |(route, _)| route);
+fn method_not_allowed(route: &'static str) -> Reply {
     Reply {
         status: 405,
         headers: vec![
@@ -205,26 +289,6 @@ fn method_not_allowed(req: &Request) -> Reply {
         ],
         body: Body::Text("method not allowed.\n".into()),
         event: Event::route(route, 405),
-    }
-}
-
-/// The reply for a client that already holds `slots::MAX_STREAMS` open
-/// animation streams. `retry_after` is in seconds; see `Slots::acquire`.
-pub fn too_many_streams(retry_after: u64) -> Reply {
-    Reply {
-        status: 429,
-        headers: vec![
-            ("content-type", TEXT_PLAIN.into()),
-            ("retry-after", retry_after.to_string().into()),
-        ],
-        body: Body::Text(format!(
-            "too many open streams. at most {} at a time; close one and try again.\n",
-            slots::MAX_STREAMS
-        )),
-        event: Event {
-            error: Limit::StreamSlots.reason(),
-            ..Event::route(ROUTE_RENDER, 429)
-        },
     }
 }
 
@@ -415,6 +479,7 @@ fn url_too_long(req: &Request) -> bool {
 }
 
 /// What the banner renderer does with a request no named route matched.
+#[derive(Debug)]
 enum Fallback {
     TooLong,
     /// An HTML page for a browser, as (route, asset).
@@ -438,8 +503,8 @@ fn fallback(req: &Request) -> Fallback {
     Fallback::Render(cfg)
 }
 
-fn render_fallback(req: &Request) -> Reply {
-    let cfg = match fallback(req) {
+fn render_fallback(fb: &Fallback) -> Reply {
+    let cfg = match fb {
         Fallback::TooLong => {
             return Reply {
                 status: 414,
@@ -448,13 +513,13 @@ fn render_fallback(req: &Request) -> Reply {
                 event: Event::route(ROUTE_RENDER, 414),
             };
         }
-        Fallback::Page(route, asset) => return html_page(route, asset),
+        &Fallback::Page(route, asset) => return html_page(route, asset),
         Fallback::Render(cfg) => cfg,
     };
 
     // JSON always returns a single static frame.
     if !cfg.json && cfg.should_animate() {
-        return match Animation::new(&cfg) {
+        return match Animation::new(cfg) {
             Ok(anim) => {
                 let mut headers = vec![
                     ("content-type", TEXT_PLAIN.into()),
@@ -473,13 +538,13 @@ fn render_fallback(req: &Request) -> Reply {
                     status: 200,
                     headers,
                     body: Body::Stream(Box::new(anim)),
-                    event: Event::render(ROUTE_RENDER, 200, RenderKind::Animated, &cfg),
+                    event: Event::render(ROUTE_RENDER, 200, RenderKind::Animated, cfg),
                 }
             }
-            Err(e) => error_response(ROUTE_RENDER, RenderKind::Animated, &cfg, e),
+            Err(e) => error_response(ROUTE_RENDER, RenderKind::Animated, cfg, e),
         };
     }
-    render_static(ROUTE_RENDER, &cfg)
+    render_static(ROUTE_RENDER, cfg)
 }
 
 fn render_static(route: &'static str, cfg: &RenderConfig) -> Reply {

@@ -177,6 +177,9 @@ pub fn object_name(key: &str, secret: &[u8]) -> String {
 }
 
 /// The lease to ask for, for a stream that times out after `timeout_ms`.
+/// The Worker passes the timeout the request asked for, before
+/// `stream::cap`, so for a capped stream the lease and a refusal's
+/// retry-after can overstate how long the slot is busy.
 pub fn lease_ms(timeout_ms: u64) -> u64 {
     timeout_ms.saturating_add(LEASE_MARGIN_MS)
 }

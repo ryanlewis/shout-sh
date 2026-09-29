@@ -34,8 +34,10 @@ binding = "SHOUT_EVENTS"
 dataset = "shout_events"
 
 # Per-client rate limits, keyed on the client IP (an IPv6 /64). See
-# app::rate_limit for which requests count against which limit; the
-# health check, /_app/*, /favicon.* and /og.png are exempt.
+# app::plan for which requests count against which limit. GET and HEAD
+# on the health check, /_app/*, /favicon.* and /og.png are exempt. Every
+# other method, on any path, counts against RATE_LIMIT and never against
+# STREAM_LIMIT: under the limit it gets a 405, over it the usual 429.
 #
 # Counters are per Cloudflare location and eventually consistent, so the
 # limits are approximate. They stop one client flooding the service, not

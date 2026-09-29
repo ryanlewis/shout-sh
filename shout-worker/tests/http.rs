@@ -16,7 +16,7 @@
 //! tests check which asset path is requested and with which headers;
 //! `just smoke` checks the bytes through `wrangler dev`.
 
-use shout_worker::app::{Body, Reply, Request, handle, help_text, rate_limit};
+use shout_worker::app::{Body, Limit, Reply, Request, handle, help_text, plan};
 use shout_worker::event::RenderKind;
 
 fn req(uri: &str) -> Request<'_> {
@@ -511,13 +511,34 @@ fn other_methods_are_405() {
     }
 }
 
+/// A 405 records the page the path names, even where GET renders a
+/// banner for curl.
 #[test]
-fn other_methods_skip_the_rate_limit() {
+fn method_not_allowed_records_the_named_route() {
+    for (uri, route) in [
+        ("/about", "/about"),
+        ("/privacy", "/privacy"),
+        ("/fonts/block", "/fonts/{name}"),
+        ("/_app/index-ABC123.js", "/_app/{file}"),
+        ("/_app/a/b", "/render"),
+    ] {
+        let r = handle(&Request {
+            method: "POST",
+            ..req(uri)
+        });
+        assert_eq!(r.status, 405, "{uri}");
+        assert_eq!(r.event.route, route, "{uri}");
+    }
+    assert_eq!(get("/about").event.route, "/render");
+}
+
+#[test]
+fn other_methods_count_against_the_general_limit() {
     for method in ["POST", "PUT", "DELETE", "PATCH", "OPTIONS", "PROPFIND"] {
-        for (uri, _) in METHOD_PATHS {
+        for (uri, route) in METHOD_PATHS {
             assert_eq!(
-                rate_limit(&Request { method, ..req(uri) }),
-                None,
+                plan(&Request { method, ..req(uri) }).limit(),
+                Some((Limit::General, route)),
                 "{method} {uri}"
             );
         }
