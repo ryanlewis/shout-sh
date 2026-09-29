@@ -16,8 +16,6 @@
 //! Rows are delimited by `\n`. Columns advance one per char (cfonts is
 //! monospace); we do not special-case width — wide glyphs aren't in use.
 
-use std::fmt::Write as _;
-
 pub type Rgb = (u8, u8, u8);
 
 pub mod ansi {
@@ -166,6 +164,17 @@ pub fn row_count(cells: &[Cell]) -> u16 {
     cells.last().map(|c| c.row + 1).unwrap_or(0)
 }
 
+/// Most bytes `emit_with` writes for a grid. Under `Rainbow` and `Fire`
+/// almost every cell opens a new run, so the worst cell is a close, a
+/// truecolor open at three digits per channel, and a 4-byte char. Each row
+/// adds a close and a `\n`.
+pub fn emit_capacity(cells: &[Cell]) -> usize {
+    const OPEN: usize = TRUECOLOR_PREFIX.len() + "255;255;255m".len();
+    const CLOSE: usize = ansi::FG_DEFAULT.len();
+    let rows = usize::from(row_count(cells));
+    cells.len() * (CLOSE + OPEN + 4) + rows * (CLOSE + 1)
+}
+
 /// Emit a frame into `out`: `\n`-separated rows, coalesced SGR runs, bare
 /// chars passed through. `color_of` supplies the RGB for each cell — use
 /// `|c| c.rgb` for a faithful re-emit, or a shader closure to recolor
@@ -192,7 +201,7 @@ where
                     if open.is_some() {
                         out.push_str(ansi::FG_DEFAULT);
                     }
-                    let _ = write!(out, "\x1b[38;2;{};{};{}m", c.0, c.1, c.2);
+                    push_truecolor(out, c);
                     out.push(cell.ch);
                     open = Some(c);
                 }
@@ -216,8 +225,33 @@ where
     }
 }
 
+const TRUECOLOR_PREFIX: &str = "\x1b[38;2;";
+
+/// Push `\x1b[38;2;R;G;Bm`. Same bytes as `write!`, without going
+/// through `fmt` for each of the three channels.
+fn push_truecolor(out: &mut String, (r, g, b): Rgb) {
+    out.push_str(TRUECOLOR_PREFIX);
+    push_u8(out, r);
+    out.push(';');
+    push_u8(out, g);
+    out.push(';');
+    push_u8(out, b);
+    out.push('m');
+}
+
+/// Push `n` in decimal, no padding.
+fn push_u8(out: &mut String, n: u8) {
+    if n >= 100 {
+        out.push(char::from(b'0' + n / 100));
+    }
+    if n >= 10 {
+        out.push(char::from(b'0' + n / 10 % 10));
+    }
+    out.push(char::from(b'0' + n % 10));
+}
+
 pub fn emit(cells: &[Cell]) -> String {
-    let mut out = String::with_capacity(cells.len() * 4);
+    let mut out = String::with_capacity(emit_capacity(cells));
     emit_with(cells, |c| c.rgb, &mut out);
     out
 }
@@ -346,6 +380,16 @@ mod tests {
         let cells = parse("\x1b[1mA\x1b[22mB");
         assert_eq!(cells.len(), 2);
         assert_eq!(cells[0].rgb, None);
+    }
+
+    #[test]
+    fn push_truecolor_matches_format() {
+        for n in 0..=255u8 {
+            let rgb = (n, 255 - n, n / 2);
+            let mut out = String::new();
+            push_truecolor(&mut out, rgb);
+            assert_eq!(out, format!("\x1b[38;2;{};{};{}m", rgb.0, rgb.1, rgb.2));
+        }
     }
 
     #[test]
