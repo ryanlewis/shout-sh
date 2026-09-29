@@ -90,7 +90,30 @@ impl Filter for Rainbow {
 }
 
 pub struct Fire {
-    pub rows: u16,
+    /// `fire_gradient(row, rows)` for each row of the banner. The gradient
+    /// depends on the banner's row count, so it is built per banner.
+    gradient: Box<[Rgb]>,
+}
+
+impl Fire {
+    pub fn new(rows: u16) -> Self {
+        let gradient = (0..rows.max(1))
+            .map(|row| fire_gradient(row, rows))
+            .collect();
+        Self { gradient }
+    }
+}
+
+/// Bottom stop of the Fire gradient. `fire_gradient` clamps every row past
+/// the banner's last row to it.
+const FIRE_BOTTOM: Rgb = (255, 40, 0);
+
+/// 3-stop vertical gradient: top=yellow, middle=orange, bottom=red.
+fn fire_gradient(row: u16, rows: u16) -> Rgb {
+    let rows = rows.max(1) as f32;
+    // t in [0,1] bottom → top.
+    let t = 1.0 - (row as f32 / (rows - 1.0).max(1.0));
+    tri_gradient(t, FIRE_BOTTOM, (255, 140, 0), (255, 230, 40))
 }
 
 impl Filter for Fire {
@@ -104,11 +127,13 @@ impl Filter for Fire {
         if matches!(slot, Some(s) if s >= 1) {
             return Some(ember(cell, frame, slot.unwrap()));
         }
-        let rows = self.rows.max(1) as f32;
-        // 3-stop vertical gradient: top=yellow, middle=orange, bottom=red.
-        // t in [0,1] bottom → top.
-        let t = 1.0 - (cell.row as f32 / (rows - 1.0).max(1.0));
-        let (r, g, b) = tri_gradient(t, (255, 40, 0), (255, 140, 0), (255, 230, 40));
+        // Cells below the banner's last row are not in the table; the
+        // gradient clamps them to the bottom stop.
+        let (r, g, b) = self
+            .gradient
+            .get(usize::from(cell.row))
+            .copied()
+            .unwrap_or(FIRE_BOTTOM);
         let n = noise(cell.row as u32, cell.col as u32, frame as u32);
         let flick = (n as f32 / 255.0 - 0.5) * 60.0; // ±30
         let r = (r as f32 + flick).clamp(0.0, 255.0) as u8;
@@ -130,7 +155,7 @@ impl Shader {
     pub fn for_mode(mode: Mode, rows: u16) -> Self {
         match mode {
             Mode::Rainbow => Self::Rainbow,
-            Mode::Fire => Self::Fire(Fire { rows }),
+            Mode::Fire => Self::Fire(Fire::new(rows)),
             Mode::Solid => Self::Identity,
         }
     }
@@ -263,7 +288,7 @@ mod tests {
         // flame at the same row).
         let flame = cell('█', 0, 0, None);
         let ember = cell('█', 0, 0, Some(SLOT_SENTINELS[1]));
-        let f = Fire { rows: 6 };
+        let f = Fire::new(6);
         let rf = f.shade(&flame, 0).unwrap();
         let re = f.shade(&ember, 0).unwrap();
         // flame is much brighter in red channel than ember
@@ -286,7 +311,7 @@ mod tests {
 
     #[test]
     fn fire_animates_and_ramps() {
-        let f = Fire { rows: 6 };
+        let f = Fire::new(6);
         let top = cell('█', 0, 0, None);
         let bot = cell('█', 5, 0, None);
         let t0 = f.shade(&top, 0).unwrap();
@@ -305,14 +330,14 @@ mod tests {
 
     #[test]
     fn fire_is_deterministic() {
-        let f = Fire { rows: 6 };
+        let f = Fire::new(6);
         let c = cell('█', 3, 4, None);
         assert_eq!(f.shade(&c, 9), f.shade(&c, 9));
     }
 
     #[test]
     fn fire_skips_spaces() {
-        let f = Fire { rows: 6 };
+        let f = Fire::new(6);
         assert_eq!(f.shade(&cell(' ', 0, 0, None), 0), None);
     }
 
@@ -360,6 +385,56 @@ mod tests {
                             Some(reference(&c, frame)),
                             "rgb {rgb:?} row {row} col {col} frame {frame}"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fire_matches_uncached_formula() {
+        // The per-cell maths Fire used before the per-row table, kept here so
+        // the table path cannot drift from it.
+        fn reference(rows: u16, cell: &Cell, frame: u64) -> Option<Rgb> {
+            if cell.ch == ' ' {
+                return cell.rgb;
+            }
+            let slot = slot_of(cell);
+            if matches!(slot, Some(s) if s >= 1) {
+                return Some(ember(cell, frame, slot.unwrap()));
+            }
+            let rows = rows.max(1) as f32;
+            let t = 1.0 - (cell.row as f32 / (rows - 1.0).max(1.0));
+            let (r, g, b) = tri_gradient(t, (255, 40, 0), (255, 140, 0), (255, 230, 40));
+            let n = noise(cell.row as u32, cell.col as u32, frame as u32);
+            let flick = (n as f32 / 255.0 - 0.5) * 60.0;
+            let r = (r as f32 + flick).clamp(0.0, 255.0) as u8;
+            let g = (g as f32 + flick * 0.4).clamp(0.0, 255.0) as u8;
+            Some((r, g, b))
+        }
+        let rgbs = [
+            None,
+            Some((10, 20, 30)),
+            Some(SLOT_SENTINELS[0]),
+            Some(SLOT_SENTINELS[1]),
+            Some(SLOT_SENTINELS[2]),
+        ];
+        for rows in [0, 1, 2, 3, 6, 8, 13, 24, 100] {
+            let fire = Fire::new(rows);
+            // Two rows past the table cover the fallback.
+            for row in 0..rows + 2 {
+                for col in (0..200).step_by(7) {
+                    for frame in [0, 1, 2, 3, 29, 360, 1_000, 123_457, u64::MAX] {
+                        for rgb in rgbs {
+                            for ch in [' ', '█'] {
+                                let c = cell(ch, row, col, rgb);
+                                assert_eq!(
+                                    fire.shade(&c, frame),
+                                    reference(rows, &c, frame),
+                                    "rows {rows} row {row} col {col} frame {frame} rgb {rgb:?}"
+                                );
+                            }
+                        }
                     }
                 }
             }
