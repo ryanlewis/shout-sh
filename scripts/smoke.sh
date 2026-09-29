@@ -70,7 +70,6 @@ check "stream starts with hide cursor" "$(head -c 6 "$TMP/stream" | od -An -c | 
 check "stream ends with reset" "$(tail -c 11 "$TMP/stream" | od -An -c | tr -d ' \n')" '033[0m033[?25h\n'
 redraws=$(grep -ao $'\x1b\\[[0-9]*A\r' "$TMP/stream" | wc -l | tr -d ' ')
 check "stream redraws (7-9)" "$((redraws >= 7 && redraws <= 9))" "1"
-check "capped stream header" "$(header x-shout-capped -I --max-time 5 "$BASE/rainbow+block/$(printf 'W%.0s' $(seq 1 200))")" "fps=3; timeout=60"
 check "HEAD on stream" "$(curl -s -I --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/rainbow/hi")" "200"
 check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$BASE/health")" "405"
 

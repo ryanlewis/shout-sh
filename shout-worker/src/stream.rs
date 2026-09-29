@@ -28,6 +28,10 @@ pub const MAX_STREAM_BYTES: u64 = 64_000_000;
 /// `frame_bytes` long stays under `MAX_BYTES_PER_SEC` and
 /// `MAX_STREAM_BYTES`. Never raises either value, and never caps below 1.
 /// A frame bigger than `MAX_BYTES_PER_SEC` still gets 1 fps.
+///
+/// `frame_bytes` comes from frame 0. Later frames vary with the shader:
+/// fire frames measured up to about 4% bigger, so the ceilings can be
+/// passed by that much.
 pub fn cap(frame_bytes: usize, fps: u32, timeout: u32) -> (u32, u32) {
     let frame = (frame_bytes as u64).max(1);
     let fps_cap = (MAX_BYTES_PER_SEC / frame).max(1);
