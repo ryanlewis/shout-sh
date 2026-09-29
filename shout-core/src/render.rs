@@ -345,7 +345,8 @@ fn fit_gradient_width(opts: &mut Options) {
 /// pipeline expects. Browser output wraps everything in a `<div>…</div>`,
 /// separates rows with `<br>\n`, and colors letters via
 /// `<span style="color:#rrggbb">…</span>`. We strip the wrapper, remove the
-/// `<br>` markers, and rewrite the spans as truecolor SGR escapes. This lets
+/// `<br>` markers, and rewrite the spans as truecolor SGR escapes. Glyph
+/// characters are not escaped, so only those exact tags are markup. This lets
 /// us opt into `Env::Browser`'s 0xFFFF wrap width without adopting its HTML
 /// output format.
 fn browser_to_sgr(s: &str) -> String {
@@ -355,38 +356,33 @@ fn browser_to_sgr(s: &str) -> String {
     use std::fmt::Write as _;
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
-    while !rest.is_empty() {
-        if let Some(lt) = rest.find('<') {
-            out.push_str(&rest[..lt]);
-            rest = &rest[lt..];
-            let end = match rest.find('>') {
-                Some(e) => e,
-                None => {
-                    out.push_str(rest);
-                    break;
-                }
-            };
-            let tag = &rest[..=end];
-            if let Some(hex) = tag
-                .strip_prefix("<span style=\"color:#")
-                .and_then(|r| r.strip_suffix("\">"))
-                && hex.len() == 6
-            {
-                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-                let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
-            } else if tag == "</span>" {
-                out.push_str("\x1b[39m");
-            }
-            // `<br>` and any other unknown tag: drop. The row break after `<br>`
-            // is already carried by the following '\n'.
-            rest = &rest[end + 1..];
+    while let Some(lt) = rest.find('<') {
+        out.push_str(&rest[..lt]);
+        rest = &rest[lt..];
+        let span = rest
+            .strip_prefix("<span style=\"color:#")
+            .and_then(|r| Some((r.get(..6)?, r.get(6..)?.strip_prefix("\">")?)))
+            .filter(|(hex, _)| hex.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(|(hex, after)| Some((u32::from_str_radix(hex, 16).ok()?, after)));
+        if let Some((rgb, after)) = span {
+            let [_, r, g, b] = rgb.to_be_bytes();
+            let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("</span>") {
+            out.push_str("\x1b[39m");
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("<br>") {
+            // The row break after `<br>` is carried by the following '\n'.
+            rest = after;
         } else {
-            out.push_str(rest);
-            break;
+            // cfonts does not escape glyph characters, and `simple` and
+            // `simple3d` draw some letters with '<'. Anything that is not
+            // one of the tags above is a glyph.
+            out.push('<');
+            rest = &rest[1..];
         }
     }
+    out.push_str(rest);
     out
 }
 
@@ -620,6 +616,58 @@ mod tests {
             got,
             "\x1b[38;2;255;0;170mA█\x1b[39m\n\x1b[38;2;0;170;255mB\x1b[39m"
         );
+    }
+
+    #[test]
+    fn browser_to_sgr_keeps_glyph_angle_brackets() {
+        // cfonts does not escape glyphs, so a '<' in a letter reaches us raw,
+        // inside a span or between ANSI escapes on the gradient path.
+        let in_ =
+            "<div style=\"x\"><span style=\"color:#ff0000\">| <</span> >\x1b[39m<br>\n<></div>";
+        assert_eq!(
+            browser_to_sgr(in_),
+            "\x1b[38;2;255;0;0m| <\x1b[39m >\x1b[39m\n<>"
+        );
+    }
+
+    #[test]
+    fn browser_render_keeps_glyph_angle_brackets() {
+        // `simple` and `simple3d` draw these letters with '<'. Env::Cli
+        // output carries no HTML, so it shows where every glyph belongs.
+        // Env::Cli wraps at the width of the terminal running the tests, so
+        // render one letter at a time to keep it on one line.
+        let letters = [("simple", "$kx"), ("simple3d", "&38kx")]
+            .into_iter()
+            .flat_map(|(font, text)| text.chars().map(move |c| (font, c)));
+        for (font, letter) in letters {
+            for (mode, preset) in [
+                (Some(Mode::Fire), ""),
+                (Some(Mode::Rainbow), ""),
+                (Some(Mode::Solid), "sunset"),
+                (None, ""),
+            ] {
+                let cfg = RenderConfig {
+                    text: letter.into(),
+                    font: font.into(),
+                    mode,
+                    preset: preset.into(),
+                    padding: 0,
+                    ..Default::default()
+                };
+                let cli = render_cells(&cfg).unwrap();
+                let browser = render_cells(&RenderConfig {
+                    browser: true,
+                    ..cfg.clone()
+                })
+                .unwrap();
+                assert!(cli.iter().any(|c| c.ch == '<'), "{font} {letter}: no '<'");
+                assert_eq!(
+                    layout(&browser),
+                    layout(&cli),
+                    "{font} {letter} {mode:?} {preset}"
+                );
+            }
+        }
     }
 
     #[test]
