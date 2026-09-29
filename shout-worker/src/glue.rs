@@ -14,15 +14,15 @@ use std::time::Duration;
 
 use futures_util::future::{Either, select};
 use futures_util::stream;
-use worker::js_sys::{Function, Promise};
+use worker::js_sys::{self, Function, Promise};
 use worker::wasm_bindgen::{self, JsValue};
 use worker::wasm_bindgen_futures::JsFuture;
 use worker::wasm_bindgen_futures::future_to_promise;
 use worker::web_sys::AbortSignal;
 use worker::{
     AnalyticsEngineDataPointBuilder, AnalyticsEngineDataset, Context, Date, Delay, DurableObject,
-    Env, Headers, Request, Response, ResponseBody, Result, State, Stub, console_error,
-    durable_object, event,
+    Env, Headers, Request, Response, ResponseBody, Result, ScheduledTime, State, Stub,
+    console_error, durable_object, event,
 };
 
 use crate::app::{self, Body, Limit, Reply};
@@ -133,8 +133,9 @@ struct HeldSlot {
 
 /// Take a stream slot for the client at `ip`. Fails open: a missing
 /// binding, a failed or slow call, or an unexpected answer all let the
-/// stream go ahead without a slot. Only the binding name is logged,
-/// never the key.
+/// stream go ahead. After a failed or slow call the stream still releases
+/// its id when it ends, in case the object took it. Only the binding name
+/// is logged, never the key.
 async fn acquire_slot(env: &Env, ip: &str, ttl_ms: u64) -> SlotOutcome {
     let stub = match env
         .durable_object(STREAM_SLOTS_BINDING)
@@ -155,15 +156,24 @@ async fn acquire_slot(env: &Env, ip: &str, ttl_ms: u64) -> SlotOutcome {
     };
     let url = slot_url(Call::Acquire { id, ttl_ms });
     let call = stub.fetch_with_str(&url);
-    let mut resp = match select(Box::pin(call), Delay::from(SLOT_TIMEOUT)).await {
-        Either::Left((Ok(resp), _)) => resp,
-        Either::Left((Err(_), _)) => {
+    // A failed or slow call may still have taken the slot: the object can
+    // answer after the timeout, or the answer can be lost on the way back.
+    // The stream goes ahead either way, so hold on to the id and release
+    // it when the stream ends. Releasing an id the object never took does
+    // nothing.
+    let answer = match select(Box::pin(call), Delay::from(SLOT_TIMEOUT)).await {
+        Either::Left((answer, _)) => Some(answer),
+        Either::Right(_) => None,
+    };
+    let mut resp = match answer {
+        Some(Ok(resp)) => resp,
+        Some(Err(_)) => {
             console_error!("{STREAM_SLOTS_BINDING} acquire failed");
-            return SlotOutcome::Open;
+            return SlotOutcome::Held(HeldSlot { stub, id });
         }
-        Either::Right(_) => {
+        None => {
             console_error!("{STREAM_SLOTS_BINDING} acquire timed out");
-            return SlotOutcome::Open;
+            return SlotOutcome::Held(HeldSlot { stub, id });
         }
     };
     match resp.status_code() {
@@ -403,7 +413,10 @@ impl StreamSlots {
             }
             Some(at) => {
                 storage.put(SLOTS_KEY, slots.encode()).await?;
-                storage.set_alarm(at as i64).await
+                // A time, not an offset: `set_alarm` reads a bare i64 as
+                // milliseconds from now.
+                let at = js_sys::Date::new(&JsValue::from_f64(at as f64));
+                storage.set_alarm(ScheduledTime::new(at)).await
             }
         }
     }
@@ -423,6 +436,7 @@ impl DurableObject for StreamSlots {
         };
         let now = Date::now().as_millis();
         let mut slots = self.load(now).await?;
+        let before = slots.clone();
         let refused = match call {
             Call::Acquire { id, ttl_ms } => slots.acquire(id, now, ttl_ms).err(),
             Call::Release { id } => {
@@ -430,7 +444,12 @@ impl DurableObject for StreamSlots {
                 None
             }
         };
-        self.save(&slots).await?;
+        // A refusal or a release of an unknown id changes nothing, so skip
+        // the write. Leases `load` pruned are stale in storage, but every
+        // load prunes them and their alarm is already due.
+        if slots != before {
+            self.save(&slots).await?;
+        }
         match refused {
             Some(secs) => Ok(Response::ok(secs.to_string())?.with_status(429)),
             None => Ok(Response::empty()?.with_status(204)),

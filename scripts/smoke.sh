@@ -99,12 +99,14 @@ check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' 
 # after the burst only pass because the burst uses up STREAM_LIMIT.
 pids=()
 for _ in $(seq 1 12); do
-	curl -s -o /dev/null -w '%{http_code}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
+	curl -s -o /dev/null -w '%{http_code} %header{retry-after}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
 	pids+=($!)
 done
 # Not a bare `wait`: that would wait for wrangler too.
 wait "${pids[@]}"
-check "stream limit refuses a burst" "$(grep -c 429 "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
+# Only STREAM_LIMIT answers 429 with retry-after 60; the open-stream cap
+# gives a few seconds.
+check "stream limit refuses a burst" "$(grep -c '^429 60$' "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
 check "429 status" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "429"
 check "429 type" "$(header content-type "$BASE/fire/boom?timeout=1")" "text/plain; charset=utf-8"
 check "429 retry-after" "$(header retry-after "$BASE/fire/boom?timeout=1")" "60"
