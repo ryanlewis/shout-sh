@@ -38,6 +38,17 @@ check() {
 		fail=1
 	fi
 }
+# Poll until `test` (a command and its arguments) succeeds, for at most
+# $1 tenths of a second. sleep 0.1 works on Linux and macOS.
+wait_until() {
+	local tries=$1 i
+	shift
+	for ((i = 0; i < tries; i++)); do
+		"$@" && return 0
+		sleep 0.1
+	done
+	return 1
+}
 # Print one response header, without the trailing CR.
 header() {
 	curl -s -D - -o /dev/null "${@:2}" | tr -d '\r' | awk -v h="$1" 'tolower($0) ~ "^"h":" { sub(/^[^:]*: /, ""); print }'
@@ -75,6 +86,13 @@ check "stream starts with hide cursor" "$(head -c 6 "$TMP/stream" | od -An -c | 
 check "stream ends with reset" "$(tail -c 11 "$TMP/stream" | od -An -c | tr -d ' \n')" '033[0m033[?25h\n'
 redraws=$(grep -ao $'\x1b\\[[0-9]*A\r' "$TMP/stream" | wc -l | tr -d ' ')
 check "stream redraws (7-9)" "$((redraws >= 7 && redraws <= 9))" "1"
+# A large banner is capped, and HEAD shows the cap without streaming.
+# 200 wide 3d letters is the worst case the parser accepts; see
+# shout-worker/tests/stream.rs. HEAD never streams and does not use up
+# STREAM_LIMIT.
+big="$BASE/rainbow+3d/$(printf 'W%.0s' $(seq 1 200))?ls=10&pad=10&fps=30&timeout=300"
+check "large banner X-Shout-Capped" "$(header x-shout-capped -I --max-time 5 "$big")" "fps=1; timeout=46"
+check "small stream has no X-Shout-Capped" "$(header x-shout-capped -I --max-time 5 "$BASE/fire/boom")" ""
 check "HEAD on stream" "$(curl -s -I --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/rainbow/hi")" "200"
 check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$BASE/health")" "405"
 check "POST on stream" "$(curl -s -X POST --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
@@ -82,13 +100,22 @@ check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/nul
 
 # Open-stream cap: wrangler dev runs the StreamSlots Durable Object
 # locally. Three open streams hold every slot, so a fourth is refused
-# until one ends. Uses 5 of the 10 streams STREAM_LIMIT allows a minute.
+# until one ends. STREAM_LIMIT allows 10 a minute and counts every GET
+# that would stream, refused or not. This script sends the 1s stream above
+# (1), the 3 held streams and the refused 4th (4), and the slot-freed
+# request plus up to 5 retries (1-6). A passing run uses at most 10 before
+# the burst below, which is meant to use the rest up.
 pids=()
-for _ in 1 2 3; do
-	curl -s -o /dev/null "$BASE/fire/boom?timeout=3" &
+for i in 1 2 3; do
+	curl -s -o "$TMP/slot$i" "$BASE/fire/boom?timeout=3" &
 	pids+=($!)
 done
-sleep 1
+# A stream holds its slot once the first frame arrives. Wait for all
+# three, at most 10s.
+slots_held() { [[ -s "$TMP/slot1" && -s "$TMP/slot2" && -s "$TMP/slot3" ]]; }
+started=0
+wait_until 100 slots_held && started=1
+check "3 streams started within 10s" "$started" "1"
 curl -s -D "$TMP/slots-headers" -o /dev/null "$BASE/fire/boom?timeout=3"
 check "4th open stream refused" "$(awk 'NR == 1 { print $2 }' "$TMP/slots-headers")" "429"
 retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { print $2 }')
@@ -96,9 +123,15 @@ retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { 
 check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
 wait "${pids[@]}"
 # The release runs under waitUntil after the body ends, so it can land
-# after curl returns. Give it a moment.
-sleep 1
-check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "200"
+# after curl returns. Retry until a stream is accepted, for at most 3s.
+# A refused retry still counts against STREAM_LIMIT; see the count above.
+freed=000
+for _ in $(seq 1 6); do
+	freed=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")
+	[[ "$freed" == 200 ]] && break
+	sleep 0.5
+done
+check "slot freed when a stream ends" "$freed" "200"
 
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
 # minute). This runs last because it uses the limit up.
