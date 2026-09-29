@@ -186,6 +186,7 @@ fn too_many_requests_is_plain_text_429() {
     assert_eq!(r.event.route, "/render");
     assert_eq!(r.event.status, 429);
     assert_eq!(r.event.kind, None);
+    assert_eq!(r.event.blobs(), ["/render", "", "", "", "", ""]);
 }
 
 #[test]
