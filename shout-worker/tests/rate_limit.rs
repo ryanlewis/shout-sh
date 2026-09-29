@@ -150,8 +150,10 @@ fn oversize_url_uses_the_general_limit() {
     assert_eq!(limit(&long), Some(Limit::General));
 }
 
-/// `rate_limit` guesses whether `handle` will stream without rendering.
-/// The guess must agree with what `handle` does.
+/// `plan` decides whether `handle` will stream without rendering. Only a
+/// request that streams gets a stream timeout, and with it a slot. An
+/// animation that fails validation still counts against the stream limit,
+/// as it always did, but gets its error reply and no slot.
 #[test]
 fn stream_limit_matches_what_handle_streams() {
     let uris = [
@@ -165,9 +167,21 @@ fn stream_limit_matches_what_handle_streams() {
         "/hi?mode=rainbow&format=json",
         "/fire/boom?fps=30&timeout=300",
         "/fire/boom?font=nope",
+        "/fire/boom?color=nope",
+        "/rainbow/boom?preset=nope",
+        "/animate/boom?color=nope",
+        "/animate/boom?color=red",
+        "/animate/boom?preset=nope",
+        "/animate/boom?preset=sunset",
+        "/animate/boom?preset=sunset&color=nope",
+        "/animate/solid/boom?color=nope",
+        "/animate/solid/boom?preset=nope",
+        "/animate/solid/boom",
+        "/fire/",
         "/fonts/block",
         "/presets/sunset",
     ];
+    let mut errors = std::collections::BTreeSet::new();
     for uri in uris {
         for method in ["GET", "HEAD"] {
             for user_agent in [None, Some("Mozilla/5.0"), Some("curl/8.7.1")] {
@@ -176,21 +190,31 @@ fn stream_limit_matches_what_handle_streams() {
                     user_agent,
                     ..req(uri)
                 };
-                let streams = matches!(handle(&r).body, Body::Stream(_));
+                let reply = handle(&r);
+                let streams = matches!(reply.body, Body::Stream(_));
                 let stream_limit = matches!(rate_limit(&r), Some((Limit::Stream, _)));
-                // The glue checks a stream slot when there is a timeout.
                 let slot = plan(&r).stream_timeout_ms().is_some();
-                assert_eq!(slot, stream_limit, "{method} {uri} {user_agent:?}");
-                // An animation that fails validation (unknown font) is a
-                // 400, but it still counts as a stream request.
+                let at = format!("{method} {uri} {user_agent:?}");
+                assert_eq!(slot, streams, "{at}");
                 if streams {
-                    assert!(stream_limit, "{method} {uri} {user_agent:?}");
+                    assert!(stream_limit, "{at}");
                 } else if stream_limit {
-                    assert_eq!(handle(&r).status, 400, "{method} {uri} {user_agent:?}");
+                    assert_ne!(reply.event.error, "", "{at}");
+                    errors.insert(reply.event.error);
                 }
             }
         }
     }
+    // Every way render can refuse an animation is covered above.
+    assert_eq!(
+        errors.into_iter().collect::<Vec<_>>(),
+        [
+            "empty_text",
+            "unknown_color",
+            "unknown_font",
+            "unknown_preset"
+        ]
+    );
 }
 
 #[test]

@@ -316,3 +316,24 @@ fn slot_lease_uses_the_requested_timeout() {
         Some(5_000)
     );
 }
+
+/// A client that holds every slot still gets the 400 for a bad animation:
+/// with no stream timeout the glue never asks for a slot.
+#[test]
+fn invalid_animation_keeps_its_400_when_slots_are_full() {
+    let mut s = full(0, MIN);
+    assert!(s.acquire(99, 1, MIN).is_err(), "every slot is held");
+    let r = Request {
+        method: "GET",
+        path: "/fire/boom",
+        query: Some("font=nope"),
+        accept: None,
+        user_agent: None,
+    };
+    let p = plan(&r);
+    assert_eq!(p.limit(), Some((Limit::Stream, "/render")));
+    assert_eq!(p.stream_timeout_ms(), None);
+    let reply = p.reply();
+    assert_eq!(reply.status, 400);
+    assert_eq!(reply.event.error, "unknown_font");
+}
