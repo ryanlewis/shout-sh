@@ -71,8 +71,9 @@
 						The server counts requests in Cloudflare Workers Analytics Engine. For each
 						request it records the route pattern (for example
 						<code>/fonts/{name}</code>, never the URL itself), the response status,
-						whether the render was static, JSON or animated, the font and mode names
-						from the built-in lists, how long the request took, and how many animation
+						whether the render was static, JSON or animated, the font, mode and preset
+						names from the built-in lists, the kind of error if the request failed (for
+						example an unknown font), how long the request took, and how many animation
 						frames were sent. It never records the text you asked for, the URL, query
 						values, your IP address or your user agent.
 					</p>

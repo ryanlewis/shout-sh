@@ -219,7 +219,7 @@ fn error_response(
         status,
         headers: vec![("content-type", TEXT_PLAIN)],
         body: Body::Text(format!("{}\n", err.message())),
-        event: Event::render(route, status, kind, cfg),
+        event: Event::render(route, status, kind, cfg).with_error(&err),
     }
 }
 

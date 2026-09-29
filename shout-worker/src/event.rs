@@ -10,7 +10,7 @@
 //!
 //! Every field is a `&'static str` from a fixed list, so nothing the
 //! caller typed (banner text, raw URL, query values) can reach the
-//! dataset. Unknown fonts are recorded as an empty string.
+//! dataset. Unknown fonts and presets are recorded as an empty string.
 //!
 //! Layout (the order is the query schema, do not reorder):
 //!
@@ -21,6 +21,8 @@
 //! | blob2   | render kind: `static`, `json`, `animated` or empty   |
 //! | blob3   | font name from the built-in list, or empty           |
 //! | blob4   | mode: `default`, `solid`, `rainbow`, `fire` or empty |
+//! | blob5   | preset name from the built-in list, or empty         |
+//! | blob6   | render error kind (see `error_label`), or empty      |
 //! | double1 | HTTP status                                          |
 //! | double2 | duration in ms (see note below)                      |
 //! | double3 | frames sent (streams only, else 0)                   |
@@ -31,6 +33,8 @@
 
 use shout_core::fonts;
 use shout_core::parser::{Mode, RenderConfig};
+use shout_core::presets;
+use shout_core::render::RenderError;
 
 /// Route label for the catch-all banner renderer.
 pub const ROUTE_RENDER: &str = "/render";
@@ -59,6 +63,8 @@ pub struct Event {
     pub kind: Option<RenderKind>,
     pub font: &'static str,
     pub mode: &'static str,
+    pub preset: &'static str,
+    pub error: &'static str,
 }
 
 impl Event {
@@ -69,6 +75,8 @@ impl Event {
             kind: None,
             font: "",
             mode: "",
+            preset: "",
+            error: "",
         }
     }
 
@@ -79,15 +87,24 @@ impl Event {
             kind: Some(kind),
             font: font_label(&cfg.font),
             mode: mode_label(cfg.mode),
+            preset: preset_label(&cfg.preset),
+            error: "",
         }
     }
 
-    pub fn blobs(&self) -> [&'static str; 4] {
+    pub fn with_error(mut self, err: &RenderError) -> Self {
+        self.error = error_label(err);
+        self
+    }
+
+    pub fn blobs(&self) -> [&'static str; 6] {
         [
             self.route,
             self.kind.map(RenderKind::as_str).unwrap_or(""),
             self.font,
             self.mode,
+            self.preset,
+            self.error,
         ]
     }
 
@@ -112,5 +129,24 @@ fn mode_label(mode: Option<Mode>) -> &'static str {
         Some(Mode::Solid) => "solid",
         Some(Mode::Rainbow) => "rainbow",
         Some(Mode::Fire) => "fire",
+    }
+}
+
+/// Same reason as `font_label`: `?preset=` is caller text.
+fn preset_label(preset: &str) -> &'static str {
+    presets::PRESETS
+        .iter()
+        .map(|p| p.name)
+        .find(|n| *n == preset)
+        .unwrap_or("")
+}
+
+/// Chosen from the variant, never from the message text.
+fn error_label(err: &RenderError) -> &'static str {
+    match err {
+        RenderError::UnknownFont => "unknown_font",
+        RenderError::UnknownColor => "unknown_color",
+        RenderError::UnknownPreset => "unknown_preset",
+        RenderError::EmptyText => "empty_text",
     }
 }
