@@ -126,7 +126,7 @@ pub enum Limit {
     /// Everything that is not exempt and not an animation stream.
     General,
     /// Animation streams. Stricter, because each one holds a connection
-    /// and burns CPU for up to 300s.
+    /// for up to 300s and sends up to `stream::MAX_STREAM_BYTES`.
     Stream,
 }
 

@@ -50,8 +50,9 @@ namespace_id = "7001"
 simple = { limit = 120, period = 60 }
 
 # Animation streams: 10 a minute. A person trying out animations starts
-# a few and stops each with Ctrl-C. Each stream can run for 300s and
-# costs up to about 52s of CPU, so this is what bounds a client's cost.
+# a few and stops each with Ctrl-C. Each stream holds a connection for
+# up to 300s and sends up to 64MB (see src/stream.rs), so this is what
+# bounds a client's streaming cost.
 [[ratelimits]]
 name = "STREAM_LIMIT"
 namespace_id = "7002"
