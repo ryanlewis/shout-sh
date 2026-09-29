@@ -5,6 +5,7 @@ members = ["shout-core", "shout-wasm", "shout-worker"]
 [workspace.package]
 version = "0.1.1"
 edition = "2024"
+rust-version = "1.90"
 license = "GPL-3.0-or-later"
 description = "Tiny HTTP server that renders stylized ASCII banners over curl."
 repository = "https://github.com/ryanlewis/shout-sh"
