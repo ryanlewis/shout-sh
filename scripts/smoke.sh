@@ -119,10 +119,10 @@ retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { 
 check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
 wait "${pids[@]}"
 # The release runs under waitUntil after the body ends, so it can land
-# after curl returns. Retry until a stream is accepted, for at most 5s.
-# A retry that is refused does not open a stream, but STREAM_LIMIT counts it.
+# after curl returns. Retry until a stream is accepted, for at most 3s.
+# A refused retry still counts against STREAM_LIMIT, which has 5 left here.
 freed=000
-for _ in $(seq 1 10); do
+for _ in $(seq 1 6); do
 	freed=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")
 	[[ "$freed" == 200 ]] && break
 	sleep 0.5
