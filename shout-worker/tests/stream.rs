@@ -8,8 +8,10 @@
 
 //! Stream framing and pacing, driven with a fake clock.
 
-use shout_worker::app::{Body, Reply, Request, handle};
-use shout_worker::stream::{Animation, Step};
+use shout_core::fonts::FONTS;
+use shout_core::parser::{MAX_FPS, MAX_TIMEOUT};
+use shout_worker::app::{Body, CAPPED_HEADER, Reply, Request, handle};
+use shout_worker::stream::{Animation, MAX_BYTES_PER_SEC, MAX_STREAM_BYTES, Step, cap};
 
 fn get_with(uri: &str, accept: Option<&str>, user_agent: Option<&str>) -> Reply {
     let (path, query) = match uri.split_once('?') {
@@ -217,4 +219,122 @@ fn head_on_animated_path_does_not_stream() {
     assert_eq!(r.status, 200);
     assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
     assert!(matches!(r.body, Body::Empty));
+}
+
+/// The heaviest stream the parser accepts: 200 wide letters in `3d` with
+/// the largest letter spacing and padding. About 1.36 MB a frame.
+fn worst_case_uri() -> String {
+    format!(
+        "/rainbow+3d/{}?ls=10&pad=10&fps=30&timeout=300",
+        "W".repeat(200)
+    )
+}
+
+#[test]
+fn cap_leaves_small_frames_alone() {
+    assert_eq!(cap(1_000, 10, 60), (10, 60));
+    assert_eq!(cap(1_000, MAX_FPS, MAX_TIMEOUT), (MAX_FPS, MAX_TIMEOUT));
+}
+
+#[test]
+fn cap_lowers_fps_then_timeout() {
+    // 200 KB frames: 5 fps fits 1 MB/s; 64 MB at 1 MB/s is 64 s.
+    assert_eq!(cap(200_000, 30, 300), (5, 64));
+    // Bigger than a second's budget: 1 fps, and 64 MB / 2 MB is 32 s.
+    assert_eq!(cap(2_000_000, 30, 300), (1, 32));
+    // Bigger than the whole stream's budget: one frame a second for 1 s.
+    assert_eq!(cap(100_000_000, 30, 300), (1, 1));
+}
+
+#[test]
+fn cap_never_raises_fps_or_timeout() {
+    for bytes in [
+        0,
+        1,
+        999,
+        33_334,
+        100_000,
+        1_000_001,
+        5_000_000,
+        u32::MAX as usize,
+    ] {
+        for fps in 1..=MAX_FPS {
+            for timeout in [1, 2, 59, 60, 61, MAX_TIMEOUT] {
+                let (f, t) = cap(bytes, fps, timeout);
+                assert!(
+                    f <= fps && t <= timeout,
+                    "cap({bytes}, {fps}, {timeout}) = ({f}, {t})"
+                );
+                assert!(
+                    f >= 1 && t >= 1,
+                    "cap({bytes}, {fps}, {timeout}) = ({f}, {t})"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn normal_words_are_never_capped_at_defaults() {
+    // "hello world again" in 3d is the largest of these, about 58 KB a
+    // frame: 0.6 MB/s and 35 MB over 60 s.
+    for word in ["hello", "shout.sh", "HELLO+WORLD", "hello+world+again"] {
+        for mode in ["rainbow", "fire", "solid+animate"] {
+            for font in FONTS {
+                let uri = format!("/{mode}+{font}/{word}");
+                let r = get(&uri);
+                assert_eq!(r.header(CAPPED_HEADER), None, "{uri}");
+                let mut anim = animation(r);
+                assert_eq!(anim.capped(), None, "{uri}");
+                assert!(matches!(anim.step(0), Step::Frame(_)));
+                assert_eq!(anim.step(0), Step::Wait(100), "{uri}: 10 fps");
+            }
+        }
+    }
+}
+
+#[test]
+fn worst_case_is_capped_to_the_ceilings() {
+    let r = get(&worst_case_uri());
+    assert_eq!(r.status, 200);
+    // 1.36 MB frames: 1 fps is the floor, and 64 MB lasts 46 frames.
+    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=46"));
+    let anim = animation(r);
+    assert_eq!(anim.capped(), Some((1, 46)));
+
+    let chunks = run(anim);
+    assert_eq!(chunks.len(), 47, "46 frames plus the reset");
+    let total: usize = chunks.iter().map(String::len).sum();
+    // Frames vary a little from frame 0, which the estimate uses.
+    assert!(
+        (total as u64) < MAX_STREAM_BYTES * 101 / 100,
+        "sent {total} bytes"
+    );
+    let per_frame = chunks.iter().map(String::len).max().unwrap() as u64;
+    assert!(
+        per_frame > MAX_BYTES_PER_SEC,
+        "1 fps floor exceeds 1 MB/s here"
+    );
+}
+
+#[test]
+fn capped_stream_keeps_its_header_on_head() {
+    let uri = worst_case_uri();
+    let (path, query) = uri.split_once('?').unwrap();
+    let r = handle(&Request {
+        method: "HEAD",
+        path,
+        query: Some(query),
+        ..Default::default()
+    });
+    assert!(matches!(r.body, Body::Empty));
+    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=46"));
+}
+
+#[test]
+fn large_banner_lowers_fps_before_timeout() {
+    // About 270 KB a frame: 3 fps fits 1 MB/s, and 64 MB at 3 fps lasts
+    // 79 s, so the default 60 s timeout stands.
+    let r = get(&format!("/rainbow+block/{}", "W".repeat(200)));
+    assert_eq!(r.header(CAPPED_HEADER), Some("fps=3; timeout=60"));
 }

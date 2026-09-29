@@ -10,6 +10,7 @@
 //! `Reply` into a `worker::Response`: it fetches `Body::Asset` from the
 //! ASSETS binding and drives `Body::Stream` on a timer.
 
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
@@ -38,6 +39,8 @@ pub const IMMUTABLE_CACHE: &str = "public, max-age=31536000, immutable";
 // would otherwise reference 404'd files after a redeploy.
 pub const HTML_CACHE: &str = "no-cache";
 pub const STATIC_DAY_CACHE: &str = "public, max-age=86400";
+/// Set on a stream when `stream::cap` lowered its fps or timeout.
+pub const CAPPED_HEADER: &str = "x-shout-capped";
 
 /// The parts of an incoming request that routing looks at.
 #[derive(Debug, Clone, Copy, Default)]
@@ -63,17 +66,17 @@ pub enum Body {
 #[derive(Debug)]
 pub struct Reply {
     pub status: u16,
-    pub headers: Vec<(&'static str, &'static str)>,
+    pub headers: Vec<(&'static str, Cow<'static, str>)>,
     pub body: Body,
     pub event: Event,
 }
 
 impl Reply {
-    pub fn header(&self, name: &str) -> Option<&'static str> {
+    pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| *v)
+            .map(|(_, v)| v.as_ref())
     }
 }
 
@@ -108,7 +111,7 @@ pub fn handle(req: &Request) -> Reply {
     if req.method != "GET" && req.method != "HEAD" {
         return Reply {
             status: 405,
-            headers: vec![("allow", "GET,HEAD")],
+            headers: vec![("allow", "GET,HEAD".into())],
             body: Body::Empty,
             event: Event::route(route, 405),
         };
@@ -147,7 +150,7 @@ fn decode(s: &str) -> String {
 fn plain(route: &'static str, body: String) -> Reply {
     Reply {
         status: 200,
-        headers: vec![("content-type", TEXT_PLAIN)],
+        headers: vec![("content-type", TEXT_PLAIN.into())],
         body: Body::Text(body),
         event: Event::route(route, 200),
     }
@@ -156,7 +159,10 @@ fn plain(route: &'static str, body: String) -> Reply {
 fn html_page(route: &'static str, asset: &str) -> Reply {
     Reply {
         status: 200,
-        headers: vec![("content-type", TEXT_HTML), ("cache-control", HTML_CACHE)],
+        headers: vec![
+            ("content-type", TEXT_HTML.into()),
+            ("cache-control", HTML_CACHE.into()),
+        ],
         body: Body::Asset(asset.into()),
         event: Event::route(route, 200),
     }
@@ -165,7 +171,10 @@ fn html_page(route: &'static str, asset: &str) -> Reply {
 fn static_asset(route: &'static str, ctype: &'static str) -> Reply {
     Reply {
         status: 200,
-        headers: vec![("content-type", ctype), ("cache-control", STATIC_DAY_CACHE)],
+        headers: vec![
+            ("content-type", ctype.into()),
+            ("cache-control", STATIC_DAY_CACHE.into()),
+        ],
         body: Body::Asset(route.into()),
         event: Event::route(route, 200),
     }
@@ -199,7 +208,10 @@ fn app_asset(file: &str) -> Reply {
     };
     Reply {
         status: 200,
-        headers: vec![("content-type", ctype), ("cache-control", IMMUTABLE_CACHE)],
+        headers: vec![
+            ("content-type", ctype.into()),
+            ("cache-control", IMMUTABLE_CACHE.into()),
+        ],
         body: Body::Asset(format!("/_app/{file}")),
         event: Event::route(ROUTE, 200),
     }
@@ -217,7 +229,7 @@ fn error_response(
     };
     Reply {
         status,
-        headers: vec![("content-type", TEXT_PLAIN)],
+        headers: vec![("content-type", TEXT_PLAIN.into())],
         body: Body::Text(format!("{}\n", err.message())),
         event: Event::render(route, status, kind, cfg).with_error(&err),
     }
@@ -276,7 +288,7 @@ fn render_fallback(req: &Request) -> Reply {
     if req.path.len() + query_len > MAX_URL_LEN {
         return Reply {
             status: 414,
-            headers: vec![("content-type", TEXT_PLAIN)],
+            headers: vec![("content-type", TEXT_PLAIN.into())],
             body: Body::Text("url too long.\n".into()),
             event: Event::route(ROUTE_RENDER, 414),
         };
@@ -293,16 +305,27 @@ fn render_fallback(req: &Request) -> Reply {
     // JSON always returns a single static frame.
     if !cfg.json && cfg.should_animate() {
         return match Animation::new(&cfg) {
-            Ok(anim) => Reply {
-                status: 200,
-                headers: vec![
-                    ("content-type", TEXT_PLAIN),
-                    ("cache-control", "no-cache"),
-                    ("x-content-type-options", "nosniff"),
-                ],
-                body: Body::Stream(Box::new(anim)),
-                event: Event::render(ROUTE_RENDER, 200, RenderKind::Animated, &cfg),
-            },
+            Ok(anim) => {
+                let mut headers = vec![
+                    ("content-type", TEXT_PLAIN.into()),
+                    ("cache-control", "no-cache".into()),
+                    ("x-content-type-options", "nosniff".into()),
+                ];
+                // A big banner streams slower or for less time; say so
+                // here, since text in the body would corrupt the frames.
+                if let Some((fps, timeout)) = anim.capped() {
+                    headers.push((
+                        CAPPED_HEADER,
+                        format!("fps={fps}; timeout={timeout}").into(),
+                    ));
+                }
+                Reply {
+                    status: 200,
+                    headers,
+                    body: Body::Stream(Box::new(anim)),
+                    event: Event::render(ROUTE_RENDER, 200, RenderKind::Animated, &cfg),
+                }
+            }
             Err(e) => error_response(ROUTE_RENDER, RenderKind::Animated, &cfg, e),
         };
     }
@@ -324,14 +347,14 @@ fn render_static(route: &'static str, cfg: &RenderConfig) -> Reply {
             });
             Reply {
                 status: 200,
-                headers: vec![("content-type", "application/json")],
+                headers: vec![("content-type", "application/json".into())],
                 body: Body::Text(body.to_string()),
                 event: Event::render(route, 200, kind, cfg),
             }
         }
         Ok(out) => Reply {
             status: 200,
-            headers: vec![("content-type", TEXT_PLAIN)],
+            headers: vec![("content-type", TEXT_PLAIN.into())],
             body: Body::Text(out),
             event: Event::render(route, 200, kind, cfg),
         },
@@ -372,7 +395,9 @@ fn build_help_text() -> String {
     s.push_str("  animate      force animation on any mode.\n");
     s.push_str("  once         force a single static frame.\n");
     s.push_str("  ?fps=N       frames per second. default 10, capped at 30.\n");
-    s.push_str("  ?timeout=N   seconds before server closes. default 60, max 300.\n\n");
+    s.push_str("  ?timeout=N   seconds before server closes. default 60, max 300.\n");
+    s.push_str("  large banners stream at lower fps or timeout; the X-Shout-Capped\n");
+    s.push_str("  response header shows the values used.\n\n");
     s.push_str("COLORS\n");
     s.push_str("  red, green, blue, yellow, cyan, magenta, white, gray\n");
     s.push_str("  `*bright` variants, e.g. `redbright`, `cyanbright`.\n\n");

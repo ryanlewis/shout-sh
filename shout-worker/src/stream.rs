@@ -16,6 +16,28 @@ use shout_core::render::{RenderError, emit_shaded, render_cells};
 use shout_core::sgr::{self, Cell, ansi};
 use shout_core::shader::{Filter, Fire, Identity, Rainbow};
 
+/// Most bytes per second one stream may send. The largest banner a normal
+/// phrase makes (three words in `3d`, about 58 KB a frame) needs 0.6 MB/s
+/// at the default 10 fps.
+pub const MAX_BYTES_PER_SEC: u64 = 1_000_000;
+/// Most bytes one stream may send in total. The same banner at the default
+/// 10 fps for 60 s is about 35 MB.
+pub const MAX_STREAM_BYTES: u64 = 64_000_000;
+
+/// Lower `fps`, then `timeout`, so that a stream whose redraws are
+/// `frame_bytes` long stays under `MAX_BYTES_PER_SEC` and
+/// `MAX_STREAM_BYTES`. Never raises either value, and never caps below 1.
+/// A frame bigger than `MAX_BYTES_PER_SEC` still gets 1 fps.
+pub fn cap(frame_bytes: usize, fps: u32, timeout: u32) -> (u32, u32) {
+    let frame = (frame_bytes as u64).max(1);
+    let fps_cap = (MAX_BYTES_PER_SEC / frame).max(1);
+    let fps = u64::from(fps).min(fps_cap);
+    let timeout_cap = (MAX_STREAM_BYTES / (frame * fps.max(1))).max(1);
+    let timeout = u64::from(timeout).min(timeout_cap);
+    // Both are at most their u32 inputs, so the casts cannot truncate.
+    (fps as u32, timeout as u32)
+}
+
 /// What the stream should do next.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Step {
@@ -31,10 +53,14 @@ pub enum Step {
 
 pub struct Animation {
     cells: Vec<Cell>,
+    /// Frame 0, rendered up front to size the stream. Taken on first step.
+    first: String,
     shader: Shader,
     up: String,
     tick_ms: u64,
     timeout_ms: u64,
+    /// `(fps, timeout)` after `cap`, when it lowered either one.
+    capped: Option<(u32, u32)>,
     frame: u64,
     start_ms: u64,
     next_due_ms: u64,
@@ -46,6 +72,7 @@ impl std::fmt::Debug for Animation {
         f.debug_struct("Animation")
             .field("tick_ms", &self.tick_ms)
             .field("timeout_ms", &self.timeout_ms)
+            .field("capped", &self.capped)
             .field("frame", &self.frame)
             .finish_non_exhaustive()
     }
@@ -62,17 +89,28 @@ impl Animation {
         } else {
             String::from("\r")
         };
+        let first = emit_shaded(&cells, &shader, 0);
+        // Every later frame is the cursor-up plus a frame about this size.
+        let asked = (cfg.fps.max(1), cfg.timeout);
+        let (fps, timeout) = cap(up.len() + first.len(), asked.0, asked.1);
         Ok(Self {
             cells,
+            first,
             shader,
             up,
-            tick_ms: u64::from(1000 / cfg.fps.max(1)),
-            timeout_ms: u64::from(cfg.timeout) * 1000,
+            tick_ms: u64::from(1000 / fps),
+            timeout_ms: u64::from(timeout) * 1000,
+            capped: ((fps, timeout) != asked).then_some((fps, timeout)),
             frame: 0,
             start_ms: 0,
             next_due_ms: 0,
             finished: false,
         })
+    }
+
+    /// `(fps, timeout)` the stream runs at, if `cap` lowered what was asked.
+    pub fn capped(&self) -> Option<(u32, u32)> {
+        self.capped
     }
 
     /// Advance the stream. The first call sends frame 0 straight away and
@@ -91,7 +129,7 @@ impl Animation {
                 ansi::HIDE_CURSOR,
                 ansi::CLEAR_SCREEN,
                 ansi::CURSOR_HOME,
-                emit_shaded(&self.cells, &self.shader, 0),
+                std::mem::take(&mut self.first),
             ));
         }
         let deadline = self.start_ms + self.timeout_ms;

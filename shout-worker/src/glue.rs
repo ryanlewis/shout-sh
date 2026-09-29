@@ -106,7 +106,7 @@ async fn respond(
     } = reply;
     let out = Headers::new();
     for (k, v) in &headers {
-        out.set(k, v)?;
+        out.set(k, v.as_ref())?;
     }
     let resp = match body {
         Body::Empty => Response::empty()?,
