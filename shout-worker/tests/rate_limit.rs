@@ -15,7 +15,7 @@
 //! The binding call itself only runs in the Worker; `just smoke` covers it.
 
 use shout_worker::app::{
-    Body, Limit, RETRY_AFTER, Request, handle, rate_limit, rate_limit_key, too_many_requests,
+    Body, Limit, RETRY_AFTER, Request, handle, plan, rate_limit_key, too_many_requests,
 };
 
 fn req(uri: &str) -> Request<'_> {
@@ -30,6 +30,10 @@ fn req(uri: &str) -> Request<'_> {
         accept: None,
         user_agent: None,
     }
+}
+
+fn rate_limit(r: &Request) -> Option<(Limit, &'static str)> {
+    plan(r).limit()
 }
 
 fn limit(uri: &str) -> Option<Limit> {
@@ -50,13 +54,27 @@ fn health_and_page_assets_are_exempt() {
     }
 }
 
+/// Every method but GET and HEAD gets a 405 without rendering, but still
+/// costs a Worker call, so it counts against the general limit. Exempt
+/// routes and streams too. The route is the one the 405 records.
 #[test]
-fn exempt_routes_stay_exempt_for_other_methods() {
-    let r = Request {
-        method: "POST",
-        ..req("/health")
-    };
-    assert_eq!(rate_limit(&r), None);
+fn other_methods_use_the_general_limit() {
+    for (uri, route) in [
+        ("/health", "/health"),
+        ("/_app/index-ABC123.js", "/_app/{file}"),
+        ("/fonts/block", "/fonts/{name}"),
+        ("/about", "/about"),
+        ("/hello", "/render"),
+        ("/fire/boom", "/render"),
+    ] {
+        for method in ["POST", "PUT", "DELETE", "OPTIONS", "PROPFIND"] {
+            let r = Request { method, ..req(uri) };
+            let p = plan(&r);
+            assert_eq!(p.limit(), Some((Limit::General, route)), "{method} {uri}");
+            assert_eq!(p.stream_timeout_ms(), None, "{method} {uri}");
+            assert_eq!(p.reply().status, 405, "{method} {uri}");
+        }
+    }
 }
 
 #[test]
@@ -160,6 +178,9 @@ fn stream_limit_matches_what_handle_streams() {
                 };
                 let streams = matches!(handle(&r).body, Body::Stream(_));
                 let stream_limit = matches!(rate_limit(&r), Some((Limit::Stream, _)));
+                // The glue checks a stream slot when there is a timeout.
+                let slot = plan(&r).stream_timeout_ms().is_some();
+                assert_eq!(slot, stream_limit, "{method} {uri} {user_agent:?}");
                 // An animation that fails validation (unknown font) is a
                 // 400, but it still counts as a stream request.
                 if streams {
@@ -174,11 +195,11 @@ fn stream_limit_matches_what_handle_streams() {
 
 #[test]
 fn too_many_requests_is_plain_text_429() {
-    let r = too_many_requests(Limit::General, "/render");
+    let r = too_many_requests(Limit::General, "/render", RETRY_AFTER);
     assert_eq!(r.status, 429);
     assert_eq!(r.header("content-type"), Some("text/plain; charset=utf-8"));
-    assert_eq!(r.header("retry-after"), Some(RETRY_AFTER));
-    assert_eq!(RETRY_AFTER, "60");
+    assert_eq!(r.header("retry-after"), Some("60"));
+    assert_eq!(RETRY_AFTER, 60);
     match &r.body {
         Body::Text(s) => assert_eq!(s, "too many requests. try again in a minute.\n"),
         other => panic!("expected a text body, got {other:?}"),
@@ -194,9 +215,9 @@ fn too_many_requests_is_plain_text_429() {
 
 #[test]
 fn each_limit_records_its_own_reason() {
-    let general = too_many_requests(Limit::General, "/fonts");
+    let general = too_many_requests(Limit::General, "/fonts", RETRY_AFTER);
     assert_eq!(general.event.error, "rate_limit_general");
-    let stream = too_many_requests(Limit::Stream, "/render");
+    let stream = too_many_requests(Limit::Stream, "/render", RETRY_AFTER);
     assert_eq!(stream.event.error, "rate_limit_stream");
     assert_eq!(
         stream.event.blobs(),

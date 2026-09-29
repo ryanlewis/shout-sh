@@ -16,7 +16,7 @@
 //! covers them.
 
 use shout_worker::app::rate_limit_key;
-use shout_worker::app::{Body, Limit, Request, handle, too_many_streams};
+use shout_worker::app::{Body, Limit, Request, handle, plan, too_many_requests};
 use shout_worker::slots::{
     Call, LEASE_MARGIN_MS, Lease, MAX_STREAMS, RETRY_SLACK_SECS, Slots, lease_ms, object_name,
 };
@@ -236,22 +236,25 @@ fn bad_calls_are_rejected() {
 
 #[test]
 fn too_many_streams_reply() {
-    let r = too_many_streams(35);
+    let r = too_many_requests(Limit::StreamSlots, "/render", 35);
     assert_eq!(r.status, 429);
     assert_eq!(r.header("content-type"), Some("text/plain; charset=utf-8"));
     assert_eq!(r.header("retry-after"), Some("35"));
     let Body::Text(body) = &r.body else {
         panic!("body: {:?}", r.body)
     };
-    assert!(body.contains("too many open streams"), "{body}");
+    assert_eq!(
+        body,
+        "too many open streams. at most 3 at a time; close one and try again.\n"
+    );
     assert_eq!(r.event.route, "/render");
     assert_eq!(r.event.status, 429);
     assert_eq!(r.event.error, "stream_slots");
     assert_eq!(Limit::StreamSlots.reason(), "stream_slots");
 }
 
-/// The glue only asks for a slot when the reply streams, so these are the
-/// requests that count against the cap.
+/// The glue only asks for a slot when the plan has a stream timeout, so
+/// these are the requests that count against the cap.
 #[test]
 fn only_animated_streams_take_a_slot() {
     let get = |uri: &'static str, method: &'static str, accept: Option<&'static str>| {
@@ -259,14 +262,16 @@ fn only_animated_streams_take_a_slot() {
             Some((p, q)) => (p, Some(q)),
             None => (uri, None),
         };
-        let r = handle(&Request {
+        let r = Request {
             method,
             path,
             query,
             accept,
             user_agent: None,
-        });
-        matches!(r.body, Body::Stream(_))
+        };
+        let slot = plan(&r).stream_timeout_ms().is_some();
+        assert_eq!(slot, matches!(handle(&r).body, Body::Stream(_)), "{uri}");
+        slot
     };
     assert!(get("/fire/boom", "GET", None));
     assert!(get("/animate/hi", "GET", None));
@@ -276,4 +281,38 @@ fn only_animated_streams_take_a_slot() {
     assert!(!get("/fire+once/boom", "GET", None));
     assert!(!get("/fire/boom", "GET", Some("text/html")));
     assert!(!get("/hello", "GET", None));
+}
+
+/// The slot is checked before anything renders, so its lease comes from
+/// the timeout the request asked for. Rendering frame 0 caps this banner
+/// to 46s; the plan still says 300s, which shows it rendered nothing.
+#[test]
+fn slot_lease_uses_the_requested_timeout() {
+    let uri = format!(
+        "/rainbow+3d/{}?ls=10&pad=10&fps=30&timeout=300",
+        "W".repeat(200)
+    );
+    let (path, query) = uri.split_once('?').unwrap();
+    let r = Request {
+        method: "GET",
+        path,
+        query: Some(query),
+        accept: None,
+        user_agent: None,
+    };
+    let p = plan(&r);
+    assert_eq!(p.stream_timeout_ms(), Some(300_000));
+    let Body::Stream(anim) = p.reply().body else {
+        panic!("expected a stream")
+    };
+    assert_eq!(anim.timeout_ms(), 46_000);
+    assert!(lease_ms(anim.timeout_ms()) < lease_ms(p.stream_timeout_ms().unwrap()));
+    assert_eq!(
+        plan(&Request {
+            query: Some("timeout=5"),
+            ..r
+        })
+        .stream_timeout_ms(),
+        Some(5_000)
+    );
 }

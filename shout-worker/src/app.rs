@@ -82,10 +82,72 @@ impl Reply {
     }
 }
 
+/// The reply to `req` when no limit refuses it. The Worker calls `plan`
+/// and `Plan::reply` itself, with the limit checks in between.
 pub fn handle(req: &Request) -> Reply {
-    if !method_allowed(req) {
-        return method_not_allowed(req);
+    plan(req).reply()
+}
+
+/// What happens to a request, decided before anything is rendered: the
+/// method check, the rate limit, and whether the reply is a stream.
+#[derive(Debug, Clone, Copy)]
+pub struct Plan<'a> {
+    req: Request<'a>,
+    /// Every route only reads, so only GET and HEAD are served.
+    allowed: bool,
+    limit: Option<(Limit, &'static str)>,
+    stream_timeout_ms: Option<u64>,
+}
+
+/// Plan `req`. This is the only method check.
+///
+/// This runs before any limit is checked, so it must not render anything.
+/// It shares `fallback` with `render_fallback` to tell a stream from a
+/// static banner.
+pub fn plan<'a>(req: &Request<'a>) -> Plan<'a> {
+    let allowed = matches!(req.method, "GET" | "HEAD");
+    let (limit, stream_timeout_ms) = if allowed {
+        rate_limit(req)
+    } else {
+        // Refused with a 405 and never rendered, but each one still costs
+        // a Worker call and an analytics write.
+        (Some((Limit::General, method_route(req.path))), None)
+    };
+    Plan {
+        req: *req,
+        allowed,
+        limit,
+        stream_timeout_ms,
     }
+}
+
+impl Plan<'_> {
+    /// Which rate limit applies, and the route to record if it refuses the
+    /// request. `None` means the request is exempt: the health check, and
+    /// the files a browser loads with every page, when fetched with GET or
+    /// HEAD. Any other method counts against the general limit.
+    pub fn limit(&self) -> Option<(Limit, &'static str)> {
+        self.limit
+    }
+
+    /// For an animation stream, the timeout the request asked for, in ms.
+    /// The stream slot's lease is sized from it. `stream::cap` can only
+    /// lower the timeout, never raise it, so this is an upper bound, and
+    /// the slot can be checked before `reply` renders frame 0.
+    pub fn stream_timeout_ms(&self) -> Option<u64> {
+        self.stream_timeout_ms
+    }
+
+    /// Route the request and build its reply. This renders any banner.
+    pub fn reply(&self) -> Reply {
+        if !self.allowed {
+            return method_not_allowed(method_route(self.req.path));
+        }
+        serve(&self.req)
+    }
+}
+
+fn serve(req: &Request) -> Reply {
     let Some((route, arg)) = named_route(req.path) else {
         let mut reply = render_fallback(req);
         // A HEAD response has no body, but the runtime would still wait
@@ -125,8 +187,9 @@ pub enum Limit {
     /// for up to 300s and sends up to `stream::MAX_STREAM_BYTES`.
     Stream,
     /// Too many animation streams open at once. Not a `[[ratelimits]]`
-    /// binding and never returned by `rate_limit`: the `StreamSlots`
-    /// Durable Object applies it, see `slots` and `too_many_streams`.
+    /// binding and never returned by `Plan::limit`: the `StreamSlots`
+    /// Durable Object applies it, see `slots` and
+    /// `Plan::stream_timeout_ms`.
     StreamSlots,
 }
 
@@ -144,45 +207,48 @@ impl Limit {
 
 /// Seconds a refused client should wait. Both bindings count over a 60s
 /// window (`period = 60` in wrangler.toml), so a minute always clears it.
-pub const RETRY_AFTER: &str = "60";
+pub const RETRY_AFTER: u64 = 60;
 
-/// Which rate limit applies to `req`, and the route to record if the
-/// request is refused. `None` means the request is exempt: the health
-/// check, and the files a browser loads with every page.
-///
-/// This runs before `handle`, so it must not render anything. It shares
-/// `fallback` with `render_fallback` to tell a stream from a static banner.
-/// A method other than GET or HEAD is exempt too: `handle` refuses it with
-/// a 405 without rendering, so it should not use up the client's limit.
-pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
-    if !method_allowed(req) {
-        return None;
-    }
+/// The rate limit for a GET or HEAD request, and for an animation stream
+/// the timeout it asked for in ms. See `Plan::limit` and
+/// `Plan::stream_timeout_ms`.
+fn rate_limit(req: &Request) -> (Option<(Limit, &'static str)>, Option<u64>) {
     match named_route(req.path) {
-        Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => None,
-        Some((route, _)) => Some((Limit::General, route)),
+        Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => {
+            (None, None)
+        }
+        Some((route, _)) => (Some((Limit::General, route)), None),
         None => match fallback(req) {
-            Fallback::TooLong => Some((Limit::General, ROUTE_RENDER)),
-            Fallback::Page(route, _) => Some((Limit::General, route)),
-            // HEAD never streams; see `handle`.
-            Fallback::Render(cfg) if req.method != "HEAD" && cfg.should_animate() => {
-                Some((Limit::Stream, ROUTE_RENDER))
-            }
-            Fallback::Render(_) => Some((Limit::General, ROUTE_RENDER)),
+            Fallback::TooLong => (Some((Limit::General, ROUTE_RENDER)), None),
+            Fallback::Page(route, _) => (Some((Limit::General, route)), None),
+            // HEAD never streams; see `serve`.
+            Fallback::Render(cfg) if req.method != "HEAD" && cfg.should_animate() => (
+                Some((Limit::Stream, ROUTE_RENDER)),
+                Some(u64::from(cfg.timeout) * 1000),
+            ),
+            Fallback::Render(_) => (Some((Limit::General, ROUTE_RENDER)), None),
         },
     }
 }
 
-/// The reply for a client over `limit`. Plain text for browsers too:
-/// an HTML page would cost more to serve than the request it refuses.
-pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
+/// The reply for a client that `limit` refused, recorded under `route`.
+/// `retry_after` is in seconds. Plain text for browsers too: an HTML page
+/// would cost more to serve than the request it refuses.
+pub fn too_many_requests(limit: Limit, route: &'static str, retry_after: u64) -> Reply {
+    let body = match limit {
+        Limit::StreamSlots => format!(
+            "too many open streams. at most {} at a time; close one and try again.\n",
+            slots::MAX_STREAMS
+        ),
+        Limit::General | Limit::Stream => "too many requests. try again in a minute.\n".into(),
+    };
     Reply {
         status: 429,
         headers: vec![
             ("content-type", TEXT_PLAIN.into()),
-            ("retry-after", RETRY_AFTER.into()),
+            ("retry-after", retry_after.to_string().into()),
         ],
-        body: Body::Text("too many requests. try again in a minute.\n".into()),
+        body: Body::Text(body),
         event: Event {
             error: limit.reason(),
             ..Event::route(route, 429)
@@ -190,13 +256,16 @@ pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
     }
 }
 
-/// Every route only reads, so only GET and HEAD are served.
-fn method_allowed(req: &Request) -> bool {
-    matches!(req.method, "GET" | "HEAD")
+/// The route a 405 records: the named route or browser page `path`
+/// matches, or `/render`.
+fn method_route(path: &str) -> &'static str {
+    named_route(path)
+        .map(|(route, _)| route)
+        .or_else(|| browser_page(path).map(|(route, _)| route))
+        .unwrap_or(ROUTE_RENDER)
 }
 
-fn method_not_allowed(req: &Request) -> Reply {
-    let route = named_route(req.path).map_or(ROUTE_RENDER, |(route, _)| route);
+fn method_not_allowed(route: &'static str) -> Reply {
     Reply {
         status: 405,
         headers: vec![
@@ -205,26 +274,6 @@ fn method_not_allowed(req: &Request) -> Reply {
         ],
         body: Body::Text("method not allowed.\n".into()),
         event: Event::route(route, 405),
-    }
-}
-
-/// The reply for a client that already holds `slots::MAX_STREAMS` open
-/// animation streams. `retry_after` is in seconds; see `Slots::acquire`.
-pub fn too_many_streams(retry_after: u64) -> Reply {
-    Reply {
-        status: 429,
-        headers: vec![
-            ("content-type", TEXT_PLAIN.into()),
-            ("retry-after", retry_after.to_string().into()),
-        ],
-        body: Body::Text(format!(
-            "too many open streams. at most {} at a time; close one and try again.\n",
-            slots::MAX_STREAMS
-        )),
-        event: Event {
-            error: Limit::StreamSlots.reason(),
-            ..Event::route(ROUTE_RENDER, 429)
-        },
     }
 }
 
