@@ -95,6 +95,42 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Checks the workspace with the oldest Rust it declares, so rust-version in
+  # Cargo.toml stays true. The toolchain is read from that file, so a bump
+  # there is what this job checks. The Worker glue and the browser wasm only
+  # compile for wasm32, so that target is checked as well as the host.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: read rust-version
+        id: msrv
+        run: |
+          version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$version" ]; then
+            echo "no rust-version in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
+      - run: cargo check --workspace --all-targets --locked
+
+      - name: cargo check (wasm32)
+        env:
+          RUSTFLAGS: --cfg getrandom_backend="wasm_js"
+        run: cargo check -p shout-worker -p shout-wasm --target wasm32-unknown-unknown --locked
+
   # Deploys main to Cloudflare once CI passes. The `production` environment
   # holds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and only admits
   # main. Without the token the job skips the upload, so forks and a fresh
