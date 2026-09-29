@@ -8,3 +8,11 @@ description = "Pure render pipeline (cfonts + SGR + shaders + emitters) for shou
 [dependencies]
 cfonts = { workspace = true }
 percent-encoding = "2"
+
+[dev-dependencies]
+# No rayon or plotters: fewer deps, and it keeps a wasm32-wasip1 build possible.
+criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "render"
+harness = false
