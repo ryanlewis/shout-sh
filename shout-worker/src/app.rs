@@ -82,6 +82,9 @@ impl Reply {
 }
 
 pub fn handle(req: &Request) -> Reply {
+    if !method_allowed(req) {
+        return method_not_allowed(req);
+    }
     let Some((route, arg)) = named_route(req.path) else {
         let mut reply = render_fallback(req);
         // A HEAD response has no body, but the runtime would still wait
@@ -91,14 +94,6 @@ pub fn handle(req: &Request) -> Reply {
         }
         return reply;
     };
-    if req.method != "GET" && req.method != "HEAD" {
-        return Reply {
-            status: 405,
-            headers: vec![("allow", "GET,HEAD".into())],
-            body: Body::Empty,
-            event: Event::route(route, 405),
-        };
-    }
     match route {
         "/" if accepts_html(req) => html_page("/", "/index.html"),
         "/" => plain("/", HELP.clone()),
@@ -151,7 +146,12 @@ pub const RETRY_AFTER: &str = "60";
 ///
 /// This runs before `handle`, so it must not render anything. It shares
 /// `fallback` with `render_fallback` to tell a stream from a static banner.
+/// A method other than GET or HEAD is exempt too: `handle` refuses it with
+/// a 405 without rendering, so it should not use up the client's limit.
 pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
+    if !method_allowed(req) {
+        return None;
+    }
     match named_route(req.path) {
         Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => None,
         Some((route, _)) => Some((Limit::General, route)),
@@ -181,6 +181,24 @@ pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
             error: limit.reason(),
             ..Event::route(route, 429)
         },
+    }
+}
+
+/// Every route only reads, so only GET and HEAD are served.
+fn method_allowed(req: &Request) -> bool {
+    matches!(req.method, "GET" | "HEAD")
+}
+
+fn method_not_allowed(req: &Request) -> Reply {
+    let route = named_route(req.path).map_or(ROUTE_RENDER, |(route, _)| route);
+    Reply {
+        status: 405,
+        headers: vec![
+            ("content-type", TEXT_PLAIN.into()),
+            ("allow", "GET, HEAD".into()),
+        ],
+        body: Body::Text("method not allowed.\n".into()),
+        event: Event::route(route, 405),
     }
 }
 
