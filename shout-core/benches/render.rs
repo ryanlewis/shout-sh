@@ -10,17 +10,20 @@
 //!
 //! `render_cells` is the one-off cost of a request: cfonts plus
 //! `sgr::parse`. `emit_shaded` is the bulk of the per-frame cost of an
-//! animated stream. Configs match what the Worker builds for a curl request
-//! (`browser` off). cfonts then wraps at the terminal width, so run through
-//! `just bench`, which detaches the terminal to get the Worker's 80 columns.
+//! animated stream. `emit_html` is the same for a frame of the browser
+//! playground, so its config has `browser` on, as shout-wasm's does. The
+//! other configs match what the Worker builds for a curl request (`browser`
+//! off). cfonts then wraps at the terminal width, so run through `just
+//! bench`, which detaches the terminal to get the Worker's 80 columns.
 
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use shout_core::emit_html;
 use shout_core::parser::{Mode, RenderConfig};
 use shout_core::render::{emit_shaded, render_cells};
 use shout_core::sgr::{self, Cell};
-use shout_core::shader::Shader;
+use shout_core::shader::{Filter, Shader};
 
 const SHORT: &str = "shout";
 const LONG: &str = "the quick brown fox jumps over the lazy dog";
@@ -89,5 +92,32 @@ fn bench_emit_shaded(c: &mut Criterion) {
     bench_frame(c, "fire", Mode::Fire);
 }
 
-criterion_group!(benches, bench_render_cells, bench_emit_shaded);
+fn bench_emit_html(c: &mut Criterion) {
+    // The bench_frame grid, built and emitted as shout-wasm's render_frame does.
+    let config = RenderConfig {
+        browser: true,
+        ..cfg("shout.sh", "block", Mode::Rainbow)
+    };
+    let cells = render_cells(&config).unwrap();
+    let (cols, rows) = size(&cells);
+    let filter = Shader::for_mode(Mode::Rainbow, rows);
+    let mut g = c.benchmark_group("emit_html");
+    g.throughput(Throughput::Elements(cells.len() as u64));
+    g.bench_function(format!("rainbow/{cols}x{rows}"), |b| {
+        let mut frame = 0u64;
+        b.iter(|| {
+            frame = frame.wrapping_add(1);
+            let frame = black_box(frame);
+            emit_html::emit_body(black_box(&cells), |c| filter.shade(c, frame))
+        })
+    });
+    g.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_render_cells,
+    bench_emit_shaded,
+    bench_emit_html
+);
 criterion_main!(benches);

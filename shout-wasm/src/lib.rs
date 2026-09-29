@@ -14,7 +14,7 @@
 use std::cell::RefCell;
 
 use serde::Deserialize;
-use shout_core::emit_html::emit_html_body;
+use shout_core::emit_html::emit_body;
 use shout_core::parser::{
     DEFAULT_LETTER_SPACING, DEFAULT_PADDING, MAX_LETTER_SPACING, MAX_MAX_LENGTH, MAX_PADDING, Mode,
     RenderConfig,
@@ -149,16 +149,12 @@ pub fn render_frame_html(cfg_json: &str, frame: u32) -> Result<String, JsError> 
 }
 
 fn render_frame(cells: &[Cell], mode: Mode, frame: u64) -> String {
-    let mut out = String::with_capacity(cells.len() * 16);
     let shader = Shader::for_mode(mode, sgr::row_count(cells));
-    emit_html_body(cells, |c| shader.shade(c, frame), &mut out);
-    out
+    emit_body(cells, |c| shader.shade(c, frame))
 }
 
 fn render_frame_identity(cells: &[Cell]) -> String {
-    let mut out = String::with_capacity(cells.len() * 16);
-    emit_html_body(cells, |c| Identity.shade(c, 0), &mut out);
-    out
+    emit_body(cells, |c| Identity.shade(c, 0))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

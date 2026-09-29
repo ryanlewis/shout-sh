@@ -13,9 +13,34 @@
 //! is escaped here — callers MUST NOT concatenate user text into the output
 //! buffer and MUST NOT skip the emitter for "plain" runs.
 
-use std::fmt::Write as _;
-
 use crate::sgr::{Cell, Rgb, row_count};
+
+const SPAN_OPEN_PREFIX: &str = "<span style=\"color:#";
+const SPAN_OPEN_SUFFIX: &str = "\">";
+const SPAN_CLOSE: &str = "</span>";
+
+/// Most bytes `emit_html_body` writes for a grid. Under `Rainbow` and `Fire`
+/// almost every cell opens a new span, so the worst cell is a close, an open,
+/// and the longest escape (`&quot;`, longer than any 4-byte char). Each row
+/// adds a close and a `\n`. Mirrors `sgr::emit_capacity`.
+pub fn emit_capacity(cells: &[Cell]) -> usize {
+    const OPEN: usize = SPAN_OPEN_PREFIX.len() + "rrggbb".len() + SPAN_OPEN_SUFFIX.len();
+    const CLOSE: usize = SPAN_CLOSE.len();
+    const CHAR: usize = "&quot;".len();
+    let rows = usize::from(row_count(cells));
+    cells.len() * (CLOSE + OPEN + CHAR) + rows * (CLOSE + 1)
+}
+
+/// Emit a frame body into a new buffer sized by `emit_capacity`. The
+/// HTML counterpart of `sgr::emit`.
+pub fn emit_body<F>(cells: &[Cell], color_of: F) -> String
+where
+    F: Fn(&Cell) -> Option<Rgb>,
+{
+    let mut out = String::with_capacity(emit_capacity(cells));
+    emit_html_body(cells, color_of, &mut out);
+    out
+}
 
 /// Emit the full `<pre>...</pre>` wrapper around a frame.
 pub fn emit_html_with<F>(cells: &[Cell], color_of: F, out: &mut String)
@@ -49,18 +74,14 @@ where
                 }
                 (_, Some(c)) => {
                     if open.is_some() {
-                        out.push_str("</span>");
+                        out.push_str(SPAN_CLOSE);
                     }
-                    let _ = write!(
-                        out,
-                        "<span style=\"color:#{:02x}{:02x}{:02x}\">",
-                        c.0, c.1, c.2
-                    );
+                    push_span_open(out, c);
                     push_escaped(out, cell.ch);
                     open = Some(c);
                 }
                 (Some(_), None) => {
-                    out.push_str("</span>");
+                    out.push_str(SPAN_CLOSE);
                     open = None;
                     push_escaped(out, cell.ch);
                 }
@@ -71,12 +92,27 @@ where
             idx += 1;
         }
         if open.is_some() {
-            out.push_str("</span>");
+            out.push_str(SPAN_CLOSE);
         }
         if row + 1 < rows {
             out.push('\n');
         }
     }
+}
+
+fn push_span_open(out: &mut String, (r, g, b): Rgb) {
+    out.push_str(SPAN_OPEN_PREFIX);
+    push_hex(out, r);
+    push_hex(out, g);
+    push_hex(out, b);
+    out.push_str(SPAN_OPEN_SUFFIX);
+}
+
+/// Push `n` as two lowercase hex digits.
+fn push_hex(out: &mut String, n: u8) {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    out.push(char::from(DIGITS[usize::from(n >> 4)]));
+    out.push(char::from(DIGITS[usize::from(n & 0xf)]));
 }
 
 fn push_escaped(out: &mut String, ch: char) {
@@ -223,6 +259,43 @@ mod tests {
         ];
         let b = body(&cells);
         assert!(b.contains("</span>\nx"), "got: {b:?}");
+    }
+
+    #[test]
+    fn push_span_open_matches_format() {
+        for n in 0..=255u8 {
+            let rgb = (n, 255 - n, n / 2);
+            let mut out = String::new();
+            push_span_open(&mut out, rgb);
+            assert_eq!(
+                out,
+                format!(
+                    "<span style=\"color:#{:02x}{:02x}{:02x}\">",
+                    rgb.0, rgb.1, rgb.2
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn emit_capacity_covers_worst_case() {
+        // Every cell a new color and the longest escape, over two rows.
+        let cells: Vec<Cell> = (0..20u16)
+            .map(|i| Cell {
+                ch: '"',
+                rgb: Some((255, 255, i as u8)),
+                row: i / 10,
+                col: i % 10,
+            })
+            .collect();
+        let mut s = String::new();
+        emit_html_body(&cells, |c| c.rgb, &mut s);
+        assert!(
+            s.len() <= emit_capacity(&cells),
+            "{} > {}",
+            s.len(),
+            emit_capacity(&cells)
+        );
     }
 
     #[test]
