@@ -16,7 +16,7 @@
 //! tests check which asset path is requested and with which headers;
 //! `just smoke` checks the bytes through `wrangler dev`.
 
-use shout_worker::app::{Body, Reply, Request, handle, help_text};
+use shout_worker::app::{Body, Reply, Request, handle, help_text, rate_limit};
 use shout_worker::event::RenderKind;
 
 fn req(uri: &str) -> Request<'_> {
@@ -487,14 +487,55 @@ fn html_pages_are_no_cache() {
     }
 }
 
+/// A banner, an animation stream, a rate-limit-exempt route and `/`,
+/// with the route each one records.
+const METHOD_PATHS: [(&str, &str); 4] = [
+    ("/hello", "/render"),
+    ("/fire/boom", "/render"),
+    ("/health", "/health"),
+    ("/", "/"),
+];
+
 #[test]
-fn post_on_named_route_is_405() {
-    let r = handle(&Request {
-        method: "POST",
-        ..req("/health")
-    });
-    assert_eq!(r.status, 405);
-    assert_eq!(r.header("allow"), Some("GET,HEAD"));
+fn other_methods_are_405() {
+    for method in ["POST", "PUT", "DELETE", "PATCH", "OPTIONS", "PROPFIND"] {
+        for (uri, route) in METHOD_PATHS {
+            let r = handle(&Request { method, ..req(uri) });
+            assert_eq!(r.status, 405, "{method} {uri}");
+            assert_eq!(ctype(&r), "text/plain; charset=utf-8", "{method} {uri}");
+            assert_eq!(r.header("allow"), Some("GET, HEAD"), "{method} {uri}");
+            assert_eq!(text(&r), "method not allowed.\n", "{method} {uri}");
+            assert_eq!(r.event.route, route, "{method} {uri}");
+            assert_eq!(r.event.status, 405, "{method} {uri}");
+        }
+    }
+}
+
+#[test]
+fn other_methods_skip_the_rate_limit() {
+    for method in ["POST", "PUT", "DELETE", "PATCH", "OPTIONS", "PROPFIND"] {
+        for (uri, _) in METHOD_PATHS {
+            assert_eq!(
+                rate_limit(&Request { method, ..req(uri) }),
+                None,
+                "{method} {uri}"
+            );
+        }
+    }
+}
+
+#[test]
+fn get_and_head_are_unchanged() {
+    for method in ["GET", "HEAD"] {
+        for (uri, route) in METHOD_PATHS {
+            let r = handle(&Request { method, ..req(uri) });
+            assert_eq!(r.status, 200, "{method} {uri}");
+            assert_eq!(r.header("allow"), None, "{method} {uri}");
+            assert_eq!(r.event.route, route, "{method} {uri}");
+        }
+    }
+    assert!(matches!(get("/fire/boom").body, Body::Stream(_)));
+    assert_eq!(text(&get("/")), help_text());
 }
 
 #[test]

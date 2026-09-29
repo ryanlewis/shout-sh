@@ -74,6 +74,8 @@ redraws=$(grep -ao $'\x1b\\[[0-9]*A\r' "$TMP/stream" | wc -l | tr -d ' ')
 check "stream redraws (7-9)" "$((redraws >= 7 && redraws <= 9))" "1"
 check "HEAD on stream" "$(curl -s -I --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/rainbow/hi")" "200"
 check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$BASE/health")" "405"
+check "POST on stream" "$(curl -s -X POST --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
+check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
 
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
 # minute). This runs last because it uses the limit up.

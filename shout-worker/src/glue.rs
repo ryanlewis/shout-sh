@@ -42,9 +42,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let headers = req.headers();
     let accept = headers.get("accept")?;
     let user_agent = headers.get("user-agent")?;
-    let method = req.method();
+    // The raw method, not `req.method()`: worker's `Method` turns any
+    // method it does not know (PROPFIND, PURGE, ...) into GET, which
+    // would get past the GET/HEAD check in `app`.
+    let method = req.inner().method();
     let areq = app::Request {
-        method: method.as_ref(),
+        method: &method,
         path: url.path(),
         query: url.query(),
         accept: accept.as_deref(),
