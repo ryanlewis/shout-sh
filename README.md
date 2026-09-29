@@ -123,7 +123,7 @@ don't mix.
 
 ### limits
 
-each client ip (an ipv6 /64) gets 120 requests a minute, and 10 animated
+each client ip (an ipv6 /64) gets 30 requests a minute, and 5 animated
 streams a minute on top. over the limit, shout.sh answers
 `429 too many requests` with `Retry-After: 60`. `/health`, `/_app/*`,
 `/favicon.*` and `/og.png` are not counted. the counts are kept per
