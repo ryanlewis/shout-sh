@@ -16,8 +16,6 @@
 //! Rows are delimited by `\n`. Columns advance one per char (cfonts is
 //! monospace); we do not special-case width — wide glyphs aren't in use.
 
-use std::fmt::Write as _;
-
 pub type Rgb = (u8, u8, u8);
 
 pub mod ansi {
@@ -192,7 +190,7 @@ where
                     if open.is_some() {
                         out.push_str(ansi::FG_DEFAULT);
                     }
-                    let _ = write!(out, "\x1b[38;2;{};{};{}m", c.0, c.1, c.2);
+                    push_truecolor(out, c);
                     out.push(cell.ch);
                     open = Some(c);
                 }
@@ -214,6 +212,29 @@ where
             out.push('\n');
         }
     }
+}
+
+/// Push `\x1b[38;2;R;G;Bm`. Same bytes as `write!`, without going
+/// through `fmt` for each of the three channels.
+fn push_truecolor(out: &mut String, (r, g, b): Rgb) {
+    out.push_str("\x1b[38;2;");
+    push_u8(out, r);
+    out.push(';');
+    push_u8(out, g);
+    out.push(';');
+    push_u8(out, b);
+    out.push('m');
+}
+
+/// Push `n` in decimal, no padding.
+fn push_u8(out: &mut String, n: u8) {
+    if n >= 100 {
+        out.push(char::from(b'0' + n / 100));
+    }
+    if n >= 10 {
+        out.push(char::from(b'0' + n / 10 % 10));
+    }
+    out.push(char::from(b'0' + n % 10));
 }
 
 pub fn emit(cells: &[Cell]) -> String {
@@ -346,6 +367,16 @@ mod tests {
         let cells = parse("\x1b[1mA\x1b[22mB");
         assert_eq!(cells.len(), 2);
         assert_eq!(cells[0].rgb, None);
+    }
+
+    #[test]
+    fn push_truecolor_matches_format() {
+        for n in 0..=255u8 {
+            let rgb = (n, 255 - n, n / 2);
+            let mut out = String::new();
+            push_truecolor(&mut out, rgb);
+            assert_eq!(out, format!("\x1b[38;2;{};{};{}m", rgb.0, rgb.1, rgb.2));
+        }
     }
 
     #[test]

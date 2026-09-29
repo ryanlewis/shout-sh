@@ -309,9 +309,20 @@ pub fn render_cells(cfg: &RenderConfig) -> Result<Vec<Cell>, RenderError> {
     Ok(sgr::parse(&render_raw(cfg)?))
 }
 
+/// Most bytes `emit_shaded` writes for a grid. Under `Rainbow` and `Fire`
+/// almost every cell opens a new run, so the worst cell is a close, a
+/// truecolor open at three digits per channel, and a 4-byte char. Each row
+/// adds a close and a `\n`.
+fn emit_capacity(cells: &[Cell]) -> usize {
+    const OPEN: usize = "\x1b[38;2;255;255;255m".len();
+    const CLOSE: usize = sgr::ansi::FG_DEFAULT.len();
+    let rows = usize::from(sgr::row_count(cells));
+    cells.len() * (CLOSE + OPEN + 4) + rows * (CLOSE + 1)
+}
+
 /// Apply a filter to a cell grid at frame N and emit the ANSI bytes.
 pub fn emit_shaded<F: Filter>(cells: &[Cell], filter: &F, frame: u64) -> String {
-    let mut out = String::with_capacity(cells.len() * 4);
+    let mut out = String::with_capacity(emit_capacity(cells));
     sgr::emit_with(cells, |c| filter.shade(c, frame), &mut out);
     out
 }
@@ -554,5 +565,42 @@ mod tests {
         let cells = render_cells(&cfg).unwrap();
         assert!(!cells.is_empty());
         assert!(cells.iter().any(|c| c.rgb.is_some()));
+    }
+
+    fn check_capacity<F: Filter>(cells: &[Cell], filter: &F) {
+        for frame in 0..8 {
+            let out = emit_shaded(cells, filter, frame);
+            assert!(out.len() <= emit_capacity(cells), "frame {frame}");
+        }
+    }
+
+    #[test]
+    fn emit_shaded_fits_capacity() {
+        use crate::shader::{Fire, Identity};
+        for mode in [Mode::Solid, Mode::Rainbow, Mode::Fire] {
+            let cells = render_cells(&RenderConfig {
+                mode: Some(mode),
+                ..base("shout.sh")
+            })
+            .unwrap();
+            let rows = sgr::row_count(&cells);
+            match mode {
+                Mode::Solid => check_capacity(&cells, &Identity),
+                Mode::Rainbow => check_capacity(&cells, &Rainbow),
+                Mode::Fire => check_capacity(&cells, &Fire { rows }),
+            }
+        }
+        // Worst case: every cell opens a new three-digit colour and is a
+        // 4-byte char.
+        let worst: Vec<Cell> = (0..40u16)
+            .map(|i| Cell {
+                ch: '\u{1D11E}',
+                rgb: Some((255 - (i % 2) as u8, 200, 100)),
+                row: i / 10,
+                col: i % 10,
+            })
+            .collect();
+        check_capacity(&worst, &Identity);
+        check_capacity(&[], &Rainbow);
     }
 }
