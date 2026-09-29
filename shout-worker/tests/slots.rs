@@ -15,8 +15,11 @@
 //! Durable Object and its binding only run in the Worker; `just smoke`
 //! covers them.
 
+use shout_worker::app::rate_limit_key;
 use shout_worker::app::{Body, Limit, Request, handle, too_many_streams};
-use shout_worker::slots::{Call, LEASE_MARGIN_MS, Lease, MAX_STREAMS, Slots, lease_ms};
+use shout_worker::slots::{
+    Call, LEASE_MARGIN_MS, Lease, MAX_STREAMS, RETRY_SLACK_SECS, Slots, lease_ms, object_name,
+};
 
 const MIN: u64 = 60_000;
 
@@ -101,15 +104,58 @@ fn retry_after_is_when_the_oldest_stream_times_out() {
         s.acquire(id, at, lease_ms(MIN)).unwrap();
     }
     // Stream 1 times out at t=60s; at t=25.5s that is 34.5s away.
-    assert_eq!(s.acquire(9, 25_500, lease_ms(MIN)), Err(35));
+    assert_eq!(
+        s.acquire(9, 25_500, lease_ms(MIN)),
+        Err(35 + RETRY_SLACK_SECS)
+    );
 }
 
 #[test]
-fn retry_after_is_at_least_a_second() {
+fn retry_after_is_at_least_the_slack() {
     // Past the oldest stream's timeout but inside its margin: the
     // release is late or lost, and the lease has not expired yet.
     let mut s = full(0, lease_ms(1000));
-    assert_eq!(s.acquire(9, 1000 + LEASE_MARGIN_MS - 1, MIN), Err(1));
+    assert_eq!(
+        s.acquire(9, 1000 + LEASE_MARGIN_MS - 1, MIN),
+        Err(RETRY_SLACK_SECS)
+    );
+}
+
+#[test]
+fn object_name_matches_rfc_4231() {
+    // RFC 4231 test case 2: HMAC-SHA256, key "Jefe".
+    assert_eq!(
+        object_name("what do ya want for nothing?", b"Jefe"),
+        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    );
+}
+
+#[test]
+fn object_name_is_stable_and_hides_the_address() {
+    let secret = b"0123456789abcdef0123456789abcdef";
+    for ip in [
+        "203.0.113.7",
+        "2001:db8:1234:5678::1",
+        "::ffff:198.51.100.9",
+    ] {
+        let key = rate_limit_key(ip);
+        let name = object_name(&key, secret);
+        assert_eq!(name, object_name(&key, secret), "{ip}");
+        assert_eq!(name.len(), 64, "{ip}");
+        assert!(name.bytes().all(|b| b.is_ascii_hexdigit()), "{name}");
+        // Both have a '.' or ':', which hex never does. Shorter pieces
+        // such as "203" can turn up in any hex string by chance.
+        for part in [ip, key.as_str()] {
+            assert!(!name.contains(part), "{name} contains {part}");
+        }
+    }
+}
+
+#[test]
+fn object_name_depends_on_key_and_secret() {
+    let a = object_name("203.0.113.7", b"one");
+    assert_ne!(a, object_name("203.0.113.8", b"one"));
+    assert_ne!(a, object_name("203.0.113.7", b"two"));
 }
 
 #[test]

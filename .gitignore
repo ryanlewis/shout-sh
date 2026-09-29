@@ -13,6 +13,8 @@
 /shout-worker/.wrangler/
 /shout-worker/build/
 /shout-worker/node_modules/
+# Local secrets for wrangler dev (SLOT_KEY_SECRET).
+/shout-worker/.dev.vars
 
 # IDE / editor
 .idea/

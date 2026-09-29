@@ -62,8 +62,10 @@ simple = { limit = 10, period = 60 }
 # Open animation streams per client: at most slots::MAX_STREAMS (3) at
 # once. STREAM_LIMIT above counts new streams a minute, but a stream can
 # stay open for 300s, so a client could still hold many at once. One
-# StreamSlots object per client (the rate-limit key) holds its leases:
-# slot ids and expiry times only. See src/slots.rs and src/glue.rs.
+# StreamSlots object per client holds its leases: slot ids and expiry
+# times only. The object's name is HMAC-SHA256 of the rate-limit key
+# under the SLOT_KEY_SECRET secret, never the address. Without that
+# secret the cap is off. See src/slots.rs and src/glue.rs.
 [[durable_objects.bindings]]
 name = "STREAM_SLOTS"
 class_name = "StreamSlots"

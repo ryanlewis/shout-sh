@@ -12,7 +12,10 @@ TMP="$(mktemp -d)"
 
 # A fresh state directory: wrangler dev keeps rate-limit counters on disk,
 # so a run within a minute of the last one would start over the limit.
-./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" >"$LOG" 2>&1 &
+# A throwaway SLOT_KEY_SECRET, so the open-stream cap runs (see below).
+# It overrides any value in .dev.vars.
+./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" \
+	--var "SLOT_KEY_SECRET:smoke-$RANDOM$RANDOM" >"$LOG" 2>&1 &
 WRANGLER=$!
 trap 'kill "$WRANGLER" 2>/dev/null || true; rm -rf "$LOG" "$TMP"' EXIT
 
@@ -89,7 +92,8 @@ sleep 1
 curl -s -D "$TMP/slots-headers" -o /dev/null "$BASE/fire/boom?timeout=3"
 check "4th open stream refused" "$(awk 'NR == 1 { print $2 }' "$TMP/slots-headers")" "429"
 retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { print $2 }')
-check "4th stream retry-after (1-3)" "$((retry >= 1 && retry <= 3))" "1"
+# 1-3s until the oldest stream ends, plus slots::RETRY_SLACK_SECS (2).
+check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
 wait "${pids[@]}"
 check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "200"
 

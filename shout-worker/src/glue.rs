@@ -39,6 +39,9 @@ const RATE_LIMIT_BINDING: &str = "RATE_LIMIT";
 const STREAM_LIMIT_BINDING: &str = "STREAM_LIMIT";
 /// Durable Object namespace for `StreamSlots`.
 const STREAM_SLOTS_BINDING: &str = "STREAM_SLOTS";
+/// Secret for `slots::object_name`. Set with `wrangler secret put`, or in
+/// .dev.vars for local dev.
+const SLOT_KEY_SECRET: &str = "SLOT_KEY_SECRET";
 /// Longest wait for a slot before the stream goes ahead without one.
 const SLOT_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -131,15 +134,24 @@ struct HeldSlot {
     id: u64,
 }
 
-/// Take a stream slot for the client at `ip`. Fails open: a missing
-/// binding, a failed or slow call, or an unexpected answer all let the
-/// stream go ahead. After a failed or slow call the stream still releases
-/// its id when it ends, in case the object took it. Only the binding name
-/// is logged, never the key.
+/// Take a stream slot for the client at `ip`. Fails open: a missing or
+/// empty secret, a missing binding, a failed or slow call, or an
+/// unexpected answer all let the stream go ahead. After a failed or slow
+/// call the stream still releases its id when it ends, in case the object
+/// took it. Only binding and secret names are logged, never the key.
 async fn acquire_slot(env: &Env, ip: &str, ttl_ms: u64) -> SlotOutcome {
+    // Never fall back to naming the object by the key itself.
+    let secret = match env.secret(SLOT_KEY_SECRET).map(|s| s.to_string()) {
+        Ok(secret) if !secret.is_empty() => secret,
+        _ => {
+            console_error!("{SLOT_KEY_SECRET} unset; stream slots not checked");
+            return SlotOutcome::Open;
+        }
+    };
+    let name = slots::object_name(&app::rate_limit_key(ip), secret.as_bytes());
     let stub = match env
         .durable_object(STREAM_SLOTS_BINDING)
-        .and_then(|ns| ns.get_by_name(&app::rate_limit_key(ip)))
+        .and_then(|ns| ns.get_by_name(&name))
     {
         Ok(stub) => stub,
         Err(_) => {
@@ -385,7 +397,7 @@ fn write_event(sink: Option<&AnalyticsEngineDataset>, event: &Event, start: u64,
 }
 
 /// One object per client key (`app::rate_limit_key`), named with
-/// `get_by_name`. It stores the client's leases and nothing else: slot ids
+/// `get_by_name` and `slots::object_name`, a keyed hash of the key. It stores the client's leases and nothing else: slot ids
 /// and expiry times, under one key, deleted once the last lease ends. An
 /// alarm at the next expiry clears leases that were never released.
 #[durable_object]

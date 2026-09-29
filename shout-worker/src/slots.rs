@@ -11,6 +11,9 @@
 //! object and the Worker call are in `glue`; the bookkeeping is here, as
 //! plain Rust, so the host tests cover it.
 //!
+//! The object is named with `object_name`, a keyed hash of the client
+//! key, so Cloudflare never sees the client's address as the name.
+//!
 //! A slot is a lease: it ends when the Worker releases it, or when it
 //! expires. The expiry covers a crashed isolate or a stream that stops
 //! being pulled without a disconnect, so a lost release cannot hold a
@@ -23,6 +26,11 @@ pub const MAX_STREAMS: usize = 3;
 /// starts on the first frame, a little after the slot is taken; the
 /// margin covers that gap.
 pub const LEASE_MARGIN_MS: u64 = 30_000;
+
+/// Added to Retry-After. A slot frees a little after the stream's
+/// timeout: the first frame comes after the slot is taken, and the
+/// release runs in the background once the stream ends.
+pub const RETRY_SLACK_SECS: u64 = 2;
 
 /// One held slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,9 +61,9 @@ impl Slots {
     }
 
     /// Take a slot for `ttl_ms`. Over the cap, the error is the number of
-    /// seconds to wait before retrying: when the oldest stream reaches its
-    /// timeout, the lease minus the margin, rounded up. Taking an id that
-    /// is already held renews it.
+    /// seconds to wait before retrying: until the oldest stream reaches its
+    /// timeout (its lease minus the margin), rounded up, plus
+    /// `RETRY_SLACK_SECS`. Taking an id that is already held renews it.
     pub fn acquire(&mut self, id: u64, now_ms: u64, ttl_ms: u64) -> Result<(), u64> {
         self.prune(now_ms);
         let expires_ms = now_ms.saturating_add(ttl_ms);
@@ -66,7 +74,8 @@ impl Slots {
         if self.leases.len() >= MAX_STREAMS {
             let first = self.next_expiry().unwrap_or(now_ms);
             let ends_ms = first.saturating_sub(LEASE_MARGIN_MS);
-            return Err(ends_ms.saturating_sub(now_ms).div_ceil(1000).max(1));
+            let wait = ends_ms.saturating_sub(now_ms).div_ceil(1000);
+            return Err(wait + RETRY_SLACK_SECS);
         }
         self.leases.push(Lease { id, expires_ms });
         Ok(())
@@ -145,6 +154,26 @@ impl Call {
             _ => None,
         }
     }
+}
+
+/// The name of the `StreamSlots` object for client key `key`:
+/// HMAC-SHA256 of the key under `secret`, in lowercase hex. Without the
+/// secret the name cannot be turned back into an address, even though an
+/// IPv4 key has only 2^32 possible values.
+pub fn object_name(key: &str, secret: &[u8]) -> String {
+    use hmac::{Hmac, Mac};
+    use std::fmt::Write;
+
+    // HMAC takes a key of any length, so this cannot fail.
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret).expect("HMAC takes any key length");
+    mac.update(key.as_bytes());
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }
 
 /// The lease to ask for, for a stream that times out after `timeout_ms`.

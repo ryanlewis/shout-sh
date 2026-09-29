@@ -59,11 +59,12 @@
 					</p>
 					<p>
 						Animated banners are also limited to three open streams per client at once.
-						For that, each client gets a Cloudflare Durable Object, addressed by the
-						same IP address or /64 block. Cloudflare uses the address to find the
-						object; the object does not store it. It stores one random ID and one end
-						time per open stream. Each entry is deleted when its stream ends, and at the
-						latest 30 seconds after the stream's timeout (at most 330 seconds in all).
+						For that, each client gets a Cloudflare Durable Object. The Worker names it
+						with a keyed hash of your IP address or /64 block, made with a secret key,
+						so for this feature Cloudflare only ever sees the hash, never the address
+						itself. The object stores one random ID and one end time per open stream.
+						Each entry is deleted when its stream ends, and at the latest 30 seconds
+						after the stream's timeout (at most 330 seconds in all).
 					</p>
 
 					<h2>analytics</h2>
