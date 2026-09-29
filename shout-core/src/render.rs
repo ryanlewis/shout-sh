@@ -228,6 +228,10 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
         }
     }
 
+    if cfg.browser && opts.transition_gradient {
+        fit_gradient_width(&mut opts);
+    }
+
     let raw = render(opts).text;
     let normalized = if cfg.browser {
         browser_to_sgr(&raw)
@@ -238,6 +242,103 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
         sanitize_ansi(&raw)
     };
     Ok(pad_vertically(&normalized, cfg.padding))
+}
+
+/// Width, in columns, that wrapped gradient lines are fitted to. cfonts
+/// 1.3.0's i8 step sums do not overflow up to here, so it paints them
+/// correctly in any build. From 128 columns a debug build panics on the
+/// overflow, while a release build wraps and paints correctly until
+/// `gradient_overflows`.
+const GRADIENT_MAX_WIDTH: usize = 127;
+
+/// Whether cfonts 1.3.0 paints a transition gradient across `width` columns
+/// and `stops` stops wrongly. `gradient::get_transition_steps` splits the
+/// columns into gaps between stops, counted in i8. A gap of 127 paints a
+/// flat run of the first colour, and a longer gap panics (a trap in wasm).
+fn gradient_overflows(width: usize, stops: usize) -> bool {
+    if stops < 2 || width <= stops {
+        return false;
+    }
+    let gaps = stops - 1;
+    let base = (width - stops) / gaps;
+    let rest = width - stops - base * gaps;
+    base + usize::from(rest > 0) >= 127
+}
+
+/// `Env::Browser` does not wrap lines, so a one-slot gradient banner can be
+/// wider than cfonts' gradient code handles (see `gradient_overflows`). For
+/// those banners only, cap the letters per line so each line fits in
+/// `GRADIENT_MAX_WIDTH`. Every banner cfonts paints correctly keeps its
+/// layout.
+fn fit_gradient_width(opts: &mut Options) {
+    use cfonts::chars::{
+        get_first_char_position, get_letter_length, get_letter_space, get_longest_line_len,
+    };
+
+    // Letter and spacing widths, measured as cfonts' render() does.
+    let fonts = cfonts::font::load_all_fonts();
+    let font = cfonts::font::get(&fonts, opts);
+    let spacing = if font.letterspace_size == 0 && opts.letter_spacing > 0 {
+        opts.letter_spacing - 1
+    } else {
+        opts.letter_spacing
+    };
+    let space = get_letter_length(
+        &get_letter_space(&font.letterspace, spacing, opts),
+        font.colors,
+        opts,
+    );
+    let buffer = get_letter_length(&font.buffer, font.lines, opts);
+
+    // Lay the letters out the way cfonts' render() breaks lines (on `|` and
+    // at `max_length` letters). The longest line is an upper bound on the
+    // gradient width, as it ignores the shared leading blank columns.
+    let max_letters = usize::from(opts.max_length);
+    let (mut widest, mut longest, mut line, mut count) = (0, buffer, buffer, 0);
+    for c in opts.text.chars() {
+        if c == '|' {
+            (line, count) = (buffer, 0);
+            continue;
+        }
+        let Some(letter) = font.chars.get(&c.to_string().to_uppercase()) else {
+            continue;
+        };
+        if max_letters > 0 && count >= max_letters {
+            (line, count) = (buffer, 0);
+        }
+        let len = get_letter_length(letter, font.colors, opts);
+        widest = widest.max(len);
+        line += space + len;
+        count += 1;
+        longest = longest.max(line);
+    }
+    let stops = opts.gradient.len();
+    if !gradient_overflows(longest, stops) {
+        return;
+    }
+    // The bound is too wide: measure the rows cfonts would paint, the way
+    // `gradient::add_gradient_colors` does. Without a gradient, cfonts
+    // paints letters in `colors`, which in `Env::Browser` adds `<span>`
+    // markup to the rows, so measure them uncoloured.
+    let rows = render(Options {
+        gradient: Vec::new(),
+        transition_gradient: false,
+        colors: vec![Colors::System],
+        ..opts.clone()
+    })
+    .vec;
+    let width = get_longest_line_len(&rows, rows.len(), opts)
+        .saturating_sub(get_first_char_position(&rows, opts));
+    if !gradient_overflows(width, stops) {
+        return;
+    }
+
+    let per_line = (GRADIENT_MAX_WIDTH.saturating_sub(buffer) / (space + widest).max(1)).max(1);
+    let per_line = u16::try_from(per_line).unwrap_or(u16::MAX);
+    opts.max_length = match opts.max_length {
+        0 => per_line,
+        n => n.min(per_line),
+    };
 }
 
 /// Convert cfonts `Env::Browser` output into the SGR-bearing text our cell
@@ -543,6 +644,72 @@ mod tests {
         // The Env::Browser wrapper div must have been scrubbed.
         assert!(!out.contains("<div"), "div wrapper leaked: {out:?}");
         assert!(!out.contains("<br>"), "<br> leaked: {out:?}");
+    }
+
+    #[test]
+    fn gradient_overflows_at_a_gap_of_127() {
+        // Two stops: one gap of width - 2 columns. Checked against a release
+        // build of cfonts 1.3.0: 128 paints correctly, 129 paints a flat run
+        // and 130 panics.
+        assert!(!gradient_overflows(128, 2));
+        assert!(gradient_overflows(129, 2));
+        assert!(gradient_overflows(130, 2));
+        // Three stops (Fire): two gaps, the spare column goes to the last.
+        assert!(!gradient_overflows(255, 3));
+        assert!(gradient_overflows(256, 3));
+        assert!(!gradient_overflows(1, 2));
+    }
+
+    fn browser_cfg(text: &str, font: &str, mode: Mode, preset: &str) -> RenderConfig {
+        RenderConfig {
+            text: text.into(),
+            font: font.into(),
+            mode: Some(mode),
+            preset: preset.into(),
+            browser: true,
+            padding: 0,
+            ..Default::default()
+        }
+    }
+
+    fn layout(cells: &[Cell]) -> Vec<(u16, u16, char)> {
+        cells.iter().map(|c| (c.row, c.col, c.ch)).collect()
+    }
+
+    #[test]
+    fn browser_gradient_too_wide_wraps() {
+        // One line of this pangram in a one-slot font is over 300 columns.
+        // cfonts' transition gradient panicked on it, a trap in the wasm
+        // playground. A debug build panics from 128 columns, so rendering
+        // here at all shows each line fits.
+        let text = "the quick brown fox jumps over the lazy dog";
+        for cfg in [
+            browser_cfg(text, "simple", Mode::Fire, ""),
+            browser_cfg(text, "tiny", Mode::Solid, "sunset"),
+        ] {
+            let cells = render_cells(&cfg).unwrap();
+            let cols = cells.iter().map(|c| c.col + 1).max().unwrap();
+            assert!(
+                usize::from(cols) <= GRADIENT_MAX_WIDTH,
+                "{}: {cols} columns",
+                cfg.font
+            );
+            // Wrapped onto more than one banner line.
+            let one_line = render_cells(&browser_cfg("t", &cfg.font, Mode::Rainbow, "")).unwrap();
+            assert!(sgr::row_count(&cells) > sgr::row_count(&one_line));
+        }
+    }
+
+    #[test]
+    fn browser_gradient_that_fits_keeps_layout() {
+        // Too many letters for one line of 127 columns, but the line breaks
+        // keep each line narrow, so cfonts paints it correctly as it is.
+        // Rainbow on a one-slot font skips the gradient, so it shows the
+        // layout without any fitting.
+        let text = "the quick|brown fox|jumps over|the lazy dog";
+        let fire = render_cells(&browser_cfg(text, "simple", Mode::Fire, "")).unwrap();
+        let rainbow = render_cells(&browser_cfg(text, "simple", Mode::Rainbow, "")).unwrap();
+        assert_eq!(layout(&fire), layout(&rainbow));
     }
 
     #[test]
