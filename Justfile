@@ -27,9 +27,10 @@ bench *args:
     set -euo pipefail
     cargo bench -p shout-core --bench render "$@" </dev/null 2>&1 | cat
 
-# Build the browser-facing wasm bundle via wasm-pack.
+# Build the browser-facing wasm bundle via wasm-pack. simd128 means the
+# module fails to load on engines without wasm SIMD (Safari before 16.4).
 wasm-build:
-    RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack build shout-wasm --target web --release
+    RUSTFLAGS='--cfg getrandom_backend="wasm_js" -C target-feature=+simd128' wasm-pack build shout-wasm --target web --release
 
 # Build the TS client, embedding the freshly-built wasm.
 web-build: wasm-build
@@ -52,7 +53,7 @@ worker-install:
 
 # Build the Worker (shout-worker/build/) with worker-build.
 worker-build:
-    cd shout-worker && RUSTFLAGS='--cfg getrandom_backend="wasm_js"' worker-build --release
+    cd shout-worker && RUSTFLAGS='--cfg getrandom_backend="wasm_js" -C target-feature=+simd128' worker-build --release
 
 # Run the Worker locally on :8787 with esbuild in watch mode alongside.
 # Ctrl-C stops both. wrangler serves web/dist/ as it changes; a Rust change
