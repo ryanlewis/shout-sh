@@ -19,9 +19,9 @@ use shout_core::parser::{
     DEFAULT_LETTER_SPACING, DEFAULT_PADDING, MAX_LETTER_SPACING, MAX_MAX_LENGTH, MAX_PADDING, Mode,
     RenderConfig,
 };
-use shout_core::render::{render_cells, render_config as render_ansi};
+use shout_core::render::render_cells;
 use shout_core::sgr::{self, Cell};
-use shout_core::shader::{Filter, Identity, Shader};
+use shout_core::shader::{Filter, Shader};
 use wasm_bindgen::prelude::*;
 
 /// JSON shape accepted over the wasm boundary. Fields mirror the server-side
@@ -77,24 +77,16 @@ fn cfg_from_json(s: &str) -> Result<RenderConfig, String> {
     })
 }
 
+/// Frame 0 of the config. Solid and no mode shade with `Shader::Identity`,
+/// which returns each cell's own colour.
 fn render_once_inner(cfg_json: &str) -> Result<String, String> {
-    let cfg = cfg_from_json(cfg_json)?;
-    match cfg.mode {
-        Some(Mode::Rainbow) | Some(Mode::Fire) => {
-            let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
-            Ok(render_frame(&cells, cfg.mode.unwrap(), 0))
-        }
-        _ => {
-            let _ansi = render_ansi(&cfg).map_err(|e| e.message().to_string())?;
-            let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
-            Ok(render_frame_identity(&cells))
-        }
-    }
+    render_frame_inner(cfg_json, 0)
 }
 
-/// The cell grid for the last config `render_frame_html` saw, keyed on its
-/// JSON string. The playground sends the same JSON every frame, so this skips
-/// cfonts and `sgr::parse` on all but the first frame of a config.
+/// The cell grid for the last config `render_frame_html` or `render_once_html`
+/// saw, keyed on its JSON string. The playground sends the same JSON every
+/// frame, so this skips cfonts and `sgr::parse` on all but the first frame of
+/// a config.
 struct FrameCache {
     cfg_json: String,
     mode: Mode,
@@ -153,10 +145,6 @@ fn render_frame(cells: &[Cell], mode: Mode, frame: u64) -> String {
     emit_body(cells, |c| shader.shade(c, frame))
 }
 
-fn render_frame_identity(cells: &[Cell]) -> String {
-    emit_body(cells, |c| Identity.shade(c, 0))
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
@@ -196,6 +184,52 @@ mod tests {
                 );
             }
             assert!(render_frame_inner(bad, 0).is_err());
+        }
+    }
+
+    /// `render_once_inner` as it was before it went through the frame path:
+    /// a discarded ANSI render, then the identity shader for solid.
+    fn render_once_two_pass(cfg_json: &str) -> Result<String, String> {
+        use shout_core::render::render_config;
+        use shout_core::shader::Identity;
+        let cfg = cfg_from_json(cfg_json)?;
+        match cfg.mode {
+            Some(Mode::Rainbow) | Some(Mode::Fire) => {
+                let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
+                Ok(render_frame(&cells, cfg.mode.unwrap(), 0))
+            }
+            _ => {
+                render_config(&cfg).map_err(|e| e.message().to_string())?;
+                let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
+                Ok(emit_body(&cells, |c| Identity.shade(c, 0)))
+            }
+        }
+    }
+
+    #[test]
+    fn render_once_matches_two_pass() {
+        let cfgs = [
+            r#"{"text":"HI","font":"block"}"#,
+            r#"{"text":"HI","font":"block","mode":"solid"}"#,
+            r#"{"text":"HI","font":"block","mode":"none"}"#,
+            r#"{"text":"HI","font":"tiny","color":"red"}"#,
+            r#"{"text":"HI","font":"simple","preset":"sunset"}"#,
+            r#"{"text":"HI","font":"block","preset":"neon","background":"blue"}"#,
+            r#"{"text":"HI","font":"block","mode":"rainbow"}"#,
+            r#"{"text":"HI","font":"simple","mode":"fire"}"#,
+            // Errors: each must give the same message as before.
+            r#"{"text":""}"#,
+            r#"{"text":"HI","font":"nope"}"#,
+            r#"{"text":"HI","color":"puce"}"#,
+            r#"{"text":"HI","preset":"nope"}"#,
+            r#"{"text":"HI","mode":"matrix"}"#,
+            r#"{"text":"HI""#,
+        ];
+        for cfg in cfgs {
+            let want = render_once_two_pass(cfg);
+            assert_eq!(render_once_inner(cfg), want, "{cfg}");
+            // The second call hits the cache the first one filled.
+            assert_eq!(render_once_inner(cfg), want, "{cfg} (cached)");
         }
     }
 
