@@ -26,7 +26,7 @@ use worker::{
 };
 
 use crate::app::{self, Body, Limit, Reply};
-use crate::event::{Event, ROUTE_RENDER};
+use crate::event::Event;
 use crate::slots::{self, Call, Slots};
 use crate::stream::{Animation, Step};
 
@@ -69,18 +69,18 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
     // any slot taken below.
     let mut end = StreamEnd { ctx, slot: None };
     let reply = match (plan.limit(), plan.stream_timeout_ms(), client_ip.as_deref()) {
-        (Some((limit, route)), _, _) if !allowed(&env, limit, client_ip.as_deref()).await => {
+        (Some((limit, route)), _, ip) if !allowed(&env, limit, ip).await => {
             app::too_many_requests(limit, route, app::RETRY_AFTER)
         }
         // Before `reply`, so a refused stream renders nothing.
-        (_, Some(timeout_ms), Some(ip)) => {
+        (Some((_, route)), Some(timeout_ms), Some(ip)) => {
             match acquire_slot(&env, ip, slots::lease_ms(timeout_ms)).await {
                 SlotOutcome::Held(held) => {
                     end.slot = Some(held);
                     plan.reply()
                 }
                 SlotOutcome::Refused(retry_after) => {
-                    app::too_many_requests(Limit::StreamSlots, ROUTE_RENDER, retry_after)
+                    app::too_many_requests(Limit::StreamSlots, route, retry_after)
                 }
                 SlotOutcome::Open => plan.reply(),
             }
