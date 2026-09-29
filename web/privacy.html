@@ -57,6 +57,14 @@
 						not document how long the counter itself is kept. shout.sh does not write
 						your IP address anywhere itself.
 					</p>
+					<p>
+						Animated banners are also limited to three open streams per client at once.
+						For that, each client gets a Cloudflare Durable Object, addressed by the
+						same IP address or /64 block. Cloudflare uses the address to find the
+						object; the object does not store it. It stores one random ID and one end
+						time per open stream. Each entry is deleted when its stream ends, and at the
+						latest 30 seconds after the stream's timeout (at most 330 seconds in all).
+					</p>
 
 					<h2>analytics</h2>
 					<p>

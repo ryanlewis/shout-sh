@@ -77,8 +77,26 @@ check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$
 check "POST on stream" "$(curl -s -X POST --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
 check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
 
+# Open-stream cap: wrangler dev runs the StreamSlots Durable Object
+# locally. Three open streams hold every slot, so a fourth is refused
+# until one ends. Uses 5 of the 10 streams STREAM_LIMIT allows a minute.
+pids=()
+for _ in 1 2 3; do
+	curl -s -o /dev/null "$BASE/fire/boom?timeout=3" &
+	pids+=($!)
+done
+sleep 1
+curl -s -D "$TMP/slots-headers" -o /dev/null "$BASE/fire/boom?timeout=3"
+check "4th open stream refused" "$(awk 'NR == 1 { print $2 }' "$TMP/slots-headers")" "429"
+retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { print $2 }')
+check "4th stream retry-after (1-3)" "$((retry >= 1 && retry <= 3))" "1"
+wait "${pids[@]}"
+check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "200"
+
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
 # minute). This runs last because it uses the limit up.
+# The open-stream cap refuses a few of the burst as well; the checks
+# after the burst only pass because the burst uses up STREAM_LIMIT.
 pids=()
 for _ in $(seq 1 12); do
 	curl -s -o /dev/null -w '%{http_code}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &

@@ -118,6 +118,11 @@ impl Animation {
         })
     }
 
+    /// How long the stream runs after its first frame, after `cap`.
+    pub fn timeout_ms(&self) -> u64 {
+        self.timeout_ms
+    }
+
     /// `(fps, timeout)` the stream runs at, if `cap` lowered what was asked.
     pub fn capped(&self) -> Option<(u32, u32)> {
         self.capped

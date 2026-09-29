@@ -130,6 +130,14 @@ streams a minute on top. over the limit, shout.sh answers
 cloudflare location and are approximate. the numbers live in
 `shout-worker/wrangler.toml`.
 
+a client can also hold at most 3 animated streams open at once
+(`MAX_STREAMS` in `shout-worker/src/slots.rs`). a fourth
+gets `429 too many requests`, with `Retry-After` set to the seconds until
+the oldest open stream reaches its timeout. closing a stream frees its
+slot straight away. a cloudflare durable object per client keeps the
+open slots: a random id and an end time for each, nothing else. if the
+object cannot be reached within a second, the stream goes ahead.
+
 ## endpoints
 
 | path            | description          |
