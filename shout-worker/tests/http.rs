@@ -44,7 +44,7 @@ fn get_with_accept(uri: &str, accept: &str) -> Reply {
     })
 }
 
-fn ctype(r: &Reply) -> &'static str {
+fn ctype(r: &Reply) -> &str {
     r.header("content-type").unwrap_or_default()
 }
 

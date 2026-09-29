@@ -98,6 +98,13 @@ $ curl shout.sh/solid+animate/ok      # stream a still frame (pointless, works)
 - `?timeout=N` — seconds before the server closes the stream. default 60,
   capped at 300.
 
+a large banner can lower both. each stream is held to 1 MB/s and 64 MB in
+total, estimated from the size of its first frame: fps drops first, then
+timeout, never below 1. a normal word or phrase at the default fps and
+timeout stays well under both. when a stream is lowered, the response
+carries a header with the values it runs at, e.g.
+`X-Shout-Capped: fps=7; timeout=60`. nothing is added to the body.
+
 browsers (detected by `Accept: text/html` or `User-Agent: Mozilla/*`) are
 sent a single static frame — a hung tab is not a good time.
 
