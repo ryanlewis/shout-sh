@@ -309,20 +309,9 @@ pub fn render_cells(cfg: &RenderConfig) -> Result<Vec<Cell>, RenderError> {
     Ok(sgr::parse(&render_raw(cfg)?))
 }
 
-/// Most bytes `emit_shaded` writes for a grid. Under `Rainbow` and `Fire`
-/// almost every cell opens a new run, so the worst cell is a close, a
-/// truecolor open at three digits per channel, and a 4-byte char. Each row
-/// adds a close and a `\n`.
-fn emit_capacity(cells: &[Cell]) -> usize {
-    const OPEN: usize = "\x1b[38;2;255;255;255m".len();
-    const CLOSE: usize = sgr::ansi::FG_DEFAULT.len();
-    let rows = usize::from(sgr::row_count(cells));
-    cells.len() * (CLOSE + OPEN + 4) + rows * (CLOSE + 1)
-}
-
 /// Apply a filter to a cell grid at frame N and emit the ANSI bytes.
 pub fn emit_shaded<F: Filter>(cells: &[Cell], filter: &F, frame: u64) -> String {
-    let mut out = String::with_capacity(emit_capacity(cells));
+    let mut out = String::with_capacity(sgr::emit_capacity(cells));
     sgr::emit_with(cells, |c| filter.shade(c, frame), &mut out);
     out
 }
@@ -570,7 +559,7 @@ mod tests {
     fn check_capacity<F: Filter>(cells: &[Cell], filter: &F) {
         for frame in 0..8 {
             let out = emit_shaded(cells, filter, frame);
-            assert!(out.len() <= emit_capacity(cells), "frame {frame}");
+            assert!(out.len() <= sgr::emit_capacity(cells), "frame {frame}");
         }
     }
 
