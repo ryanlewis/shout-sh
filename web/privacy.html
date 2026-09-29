@@ -50,12 +50,12 @@
 						Cloudflare, keeps for abuse prevention.
 					</p>
 					<p>
-						To stop one client flooding the service, the Worker counts requests per
-						IP address (for IPv6, per /64 block). It passes the address to
-						Cloudflare's rate limiter, which keeps a request counter for it in the
-						data centre that served you. The count only matters for a one-minute
-						window; Cloudflare does not document how long the counter itself is
-						kept. shout.sh does not write your IP address anywhere itself.
+						To stop one client flooding the service, the Worker counts requests per IP
+						address (for IPv6, per /64 block). It passes the address to Cloudflare's
+						rate limiter, which keeps a request counter for it in the data centre that
+						served you. The count only matters for a one-minute window; Cloudflare does
+						not document how long the counter itself is kept. shout.sh does not write
+						your IP address anywhere itself.
 					</p>
 
 					<h2>analytics</h2>
