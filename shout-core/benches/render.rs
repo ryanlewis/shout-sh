@@ -11,14 +11,15 @@
 //! `render_cells` is the one-off cost of a request: cfonts plus
 //! `sgr::parse`. `emit_shaded` is the bulk of the per-frame cost of an
 //! animated stream. `emit_html` is the same for a frame of the browser
-//! playground. Configs match what the Worker builds for a curl request
-//! (`browser` off). cfonts then wraps at the terminal width, so run through
-//! `just bench`, which detaches the terminal to get the Worker's 80 columns.
+//! playground, so its config has `browser` on, as shout-wasm's does. The
+//! other configs match what the Worker builds for a curl request (`browser`
+//! off). cfonts then wraps at the terminal width, so run through `just
+//! bench`, which detaches the terminal to get the Worker's 80 columns.
 
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use shout_core::emit_html::{self, emit_html_body};
+use shout_core::emit_html;
 use shout_core::parser::{Mode, RenderConfig};
 use shout_core::render::{emit_shaded, render_cells};
 use shout_core::sgr::{self, Cell};
@@ -92,8 +93,12 @@ fn bench_emit_shaded(c: &mut Criterion) {
 }
 
 fn bench_emit_html(c: &mut Criterion) {
-    // The bench_frame grid, emitted as shout-wasm's render_frame does.
-    let cells = render_cells(&cfg("shout.sh", "block", Mode::Rainbow)).unwrap();
+    // The bench_frame grid, built and emitted as shout-wasm's render_frame does.
+    let config = RenderConfig {
+        browser: true,
+        ..cfg("shout.sh", "block", Mode::Rainbow)
+    };
+    let cells = render_cells(&config).unwrap();
     let (cols, rows) = size(&cells);
     let filter = Shader::for_mode(Mode::Rainbow, rows);
     let mut g = c.benchmark_group("emit_html");
@@ -102,10 +107,8 @@ fn bench_emit_html(c: &mut Criterion) {
         let mut frame = 0u64;
         b.iter(|| {
             frame = frame.wrapping_add(1);
-            let (cells, frame) = (black_box(&cells), black_box(frame));
-            let mut out = String::with_capacity(emit_html::emit_capacity(cells));
-            emit_html_body(cells, |c| filter.shade(c, frame), &mut out);
-            out
+            let frame = black_box(frame);
+            emit_html::emit_body(black_box(&cells), |c| filter.shade(c, frame))
         })
     });
     g.finish();

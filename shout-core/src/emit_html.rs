@@ -31,6 +31,17 @@ pub fn emit_capacity(cells: &[Cell]) -> usize {
     cells.len() * (CLOSE + OPEN + CHAR) + rows * (CLOSE + 1)
 }
 
+/// Emit a frame body into a new buffer sized by `emit_capacity`. The
+/// HTML counterpart of `sgr::emit`.
+pub fn emit_body<F>(cells: &[Cell], color_of: F) -> String
+where
+    F: Fn(&Cell) -> Option<Rgb>,
+{
+    let mut out = String::with_capacity(emit_capacity(cells));
+    emit_html_body(cells, color_of, &mut out);
+    out
+}
+
 /// Emit the full `<pre>...</pre>` wrapper around a frame.
 pub fn emit_html_with<F>(cells: &[Cell], color_of: F, out: &mut String)
 where
