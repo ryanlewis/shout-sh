@@ -95,6 +95,9 @@ retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { 
 # 1-3s until the oldest stream ends, plus slots::RETRY_SLACK_SECS (2).
 check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
 wait "${pids[@]}"
+# The release runs under waitUntil after the body ends, so it can land
+# after curl returns. Give it a moment.
+sleep 1
 check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "200"
 
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a

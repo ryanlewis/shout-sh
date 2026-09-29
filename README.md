@@ -133,7 +133,7 @@ cloudflare location and are approximate. the numbers live in
 a client can also hold at most 3 animated streams open at once
 (`MAX_STREAMS` in `shout-worker/src/slots.rs`). a fourth
 gets `429 too many requests`, with `Retry-After` set to the seconds until
-the oldest open stream reaches its timeout. closing a stream frees its
+the oldest open stream reaches its timeout, plus 2. closing a stream frees its
 slot straight away. a cloudflare durable object per client keeps the
 open slots: a random id and an end time for each, nothing else. the
 object is named by a keyed hash (hmac-sha256) of the client ip, not the
