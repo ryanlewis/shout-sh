@@ -130,6 +130,17 @@ pub enum Limit {
     Stream,
 }
 
+impl Limit {
+    /// The label recorded in blob6 when this limit refuses a request.
+    /// A new limit adds an arm here.
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::General => "rate_limit_general",
+            Self::Stream => "rate_limit_stream",
+        }
+    }
+}
+
 /// Seconds a refused client should wait. Both bindings count over a 60s
 /// window (`period = 60` in wrangler.toml), so a minute always clears it.
 pub const RETRY_AFTER: &str = "60";
@@ -156,9 +167,9 @@ pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
     }
 }
 
-/// The reply for a client over its limit. Plain text for browsers too:
+/// The reply for a client over `limit`. Plain text for browsers too:
 /// an HTML page would cost more to serve than the request it refuses.
-pub fn too_many_requests(route: &'static str) -> Reply {
+pub fn too_many_requests(limit: Limit, route: &'static str) -> Reply {
     Reply {
         status: 429,
         headers: vec![
@@ -166,7 +177,10 @@ pub fn too_many_requests(route: &'static str) -> Reply {
             ("retry-after", RETRY_AFTER.into()),
         ],
         body: Body::Text("too many requests. try again in a minute.\n".into()),
-        event: Event::route(route, 429),
+        event: Event {
+            error: limit.reason(),
+            ..Event::route(route, 429)
+        },
     }
 }
 

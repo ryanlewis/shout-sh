@@ -174,7 +174,7 @@ fn stream_limit_matches_what_handle_streams() {
 
 #[test]
 fn too_many_requests_is_plain_text_429() {
-    let r = too_many_requests("/render");
+    let r = too_many_requests(Limit::General, "/render");
     assert_eq!(r.status, 429);
     assert_eq!(r.header("content-type"), Some("text/plain; charset=utf-8"));
     assert_eq!(r.header("retry-after"), Some(RETRY_AFTER));
@@ -186,7 +186,22 @@ fn too_many_requests_is_plain_text_429() {
     assert_eq!(r.event.route, "/render");
     assert_eq!(r.event.status, 429);
     assert_eq!(r.event.kind, None);
-    assert_eq!(r.event.blobs(), ["/render", "", "", "", "", ""]);
+    assert_eq!(
+        r.event.blobs(),
+        ["/render", "", "", "", "", "rate_limit_general"]
+    );
+}
+
+#[test]
+fn each_limit_records_its_own_reason() {
+    let general = too_many_requests(Limit::General, "/fonts");
+    assert_eq!(general.event.error, "rate_limit_general");
+    let stream = too_many_requests(Limit::Stream, "/render");
+    assert_eq!(stream.event.error, "rate_limit_stream");
+    assert_eq!(
+        stream.event.blobs(),
+        ["/render", "", "", "", "", "rate_limit_stream"]
+    );
 }
 
 #[test]
