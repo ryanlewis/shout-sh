@@ -17,9 +17,9 @@ use std::sync::LazyLock;
 use percent_encoding::percent_decode_str;
 
 use shout_core::fonts;
-use shout_core::parser::{MAX_PARAM_LEN, MAX_URL_LEN, Mode, RenderConfig, parse};
+use shout_core::parser::{MAX_PARAM_LEN, MAX_URL_LEN, RenderConfig, parse};
 use shout_core::presets;
-use shout_core::render::{RenderError, banner, is_color, render_config};
+use shout_core::render::{self, RenderError, banner, render_config};
 
 use crate::event::{Event, ROUTE_RENDER, RenderKind};
 use crate::slots;
@@ -152,16 +152,17 @@ impl Plan<'_> {
     /// lower the timeout, never raise it, so this is an upper bound, and
     /// the slot can be checked before `reply` renders frame 0.
     pub fn stream_timeout_ms(&self) -> Option<u64> {
-        // An animation that fails validation is a 400 from `reply`, so it
-        // takes no slot and keeps its 400 even when the slots are full.
+        // An animation that fails validation gets its error reply from
+        // `reply` (a 400, or a 200 for empty text), so it takes no slot
+        // and keeps that reply even when the slots are full.
         self.animation()
-            .filter(|cfg| renders(cfg))
+            .filter(|cfg| render::check(cfg).is_ok())
             .map(|cfg| u64::from(cfg.timeout) * 1000)
     }
 
     /// The config of an animation request. HEAD never streams; see
     /// `reply`. An animation that fails validation (an unknown font, say)
-    /// is still one here, and a 400 from `reply`.
+    /// is still one here, and gets its error reply from `reply`.
     fn animation(&self) -> Option<&RenderConfig> {
         match &self.target {
             Target::Fallback(Fallback::Render(cfg))
@@ -500,24 +501,6 @@ fn fallback(req: &Request) -> Fallback {
         cfg.once = true;
     }
     Fallback::Render(cfg)
-}
-
-/// Whether `cfg` renders, found without rendering: the checks
-/// `shout_core::render` makes before it draws anything, in the same
-/// order. A test in tests/rate_limit.rs checks this against `reply`.
-fn renders(cfg: &RenderConfig) -> bool {
-    if cfg.text.is_empty() || !fonts::is_font(&cfg.font) {
-        return false;
-    }
-    match cfg.mode {
-        // A preset wins over a color. Solid with neither is white.
-        None | Some(Mode::Solid) if !cfg.preset.is_empty() => {
-            presets::resolve(&cfg.preset).is_some()
-        }
-        None | Some(Mode::Solid) => cfg.color.is_empty() || is_color(&cfg.color),
-        // The shaders pick the colors; a color or preset is ignored.
-        Some(Mode::Rainbow | Mode::Fire) => true,
-    }
 }
 
 fn render_fallback(fb: &Fallback) -> Reply {

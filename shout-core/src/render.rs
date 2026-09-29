@@ -142,12 +142,34 @@ fn apply_preset(font_name: &str, preset_name: &str, opts: &mut Options) -> Resul
     Ok(())
 }
 
-/// Raw cfonts render as String. For Rainbow mode, renders with a neutral
-/// white base so the shader pipeline can recolor every non-space glyph.
-fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
+/// The error `render_config` would return for `cfg`, found without
+/// rendering. `render_raw` runs this first, so a caller that must decide
+/// before rendering (the Worker's stream slot) agrees with the render.
+pub fn check(cfg: &RenderConfig) -> Result<(), RenderError> {
     if cfg.text.is_empty() {
         return Err(RenderError::EmptyText);
     }
+    if !fonts::is_font(&cfg.font) {
+        return Err(RenderError::UnknownFont);
+    }
+    match cfg.mode {
+        // A preset wins over a color. Solid with neither is white.
+        None | Some(Mode::Solid) if !cfg.preset.is_empty() => {
+            presets::resolve(&cfg.preset).ok_or(RenderError::UnknownPreset)?;
+        }
+        None | Some(Mode::Solid) if !cfg.color.is_empty() => {
+            color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?;
+        }
+        // The shaders pick the colors; a color or preset is ignored.
+        None | Some(Mode::Solid | Mode::Rainbow | Mode::Fire) => {}
+    }
+    Ok(())
+}
+
+/// Raw cfonts render as String. For Rainbow mode, renders with a neutral
+/// white base so the shader pipeline can recolor every non-space glyph.
+fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
+    check(cfg)?;
 
     let font = resolve(&cfg.font).ok_or(RenderError::UnknownFont)?;
 
