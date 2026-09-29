@@ -41,33 +41,50 @@ pub fn slot_of(cell: &Cell) -> Option<u8> {
 pub struct Rainbow;
 
 impl Rainbow {
-    const HUE_PER_FRAME: f32 = 4.0;
-    const HUE_PER_COL: f32 = 3.0;
-    const HUE_PER_ROW: f32 = 12.0;
+    const HUE_PER_FRAME: u64 = 4;
+    const HUE_PER_COL: u64 = 3;
+    const HUE_PER_ROW: u64 = 12;
 }
+
+/// Lightness of each slot: slot 0 (front face), slot 1 (shadow), slot 2
+/// (deep shadow). Saturation is always 1.0.
+const RAINBOW_LIGHTNESS: [f32; 3] = [0.6, 0.35, 0.25];
+
+/// Hue offset of each slot, in degrees. The shadow trails the front face by
+/// 90° and the deep shadow by 180°.
+const RAINBOW_HUE_OFFSET: [u64; 3] = [0, 90, 180];
+
+/// `hsl_to_rgb(hue, 1.0, RAINBOW_LIGHTNESS[slot])` for every whole-degree
+/// hue, indexed `[slot][hue]`. Built at compile time.
+static RAINBOW_LUT: [[Rgb; 360]; 3] = {
+    let mut lut = [[(0, 0, 0); 360]; 3];
+    let mut slot = 0;
+    while slot < 3 {
+        let mut hue = 0;
+        while hue < 360 {
+            lut[slot][hue] = hsl_to_rgb(hue as f32, 1.0, RAINBOW_LIGHTNESS[slot]);
+            hue += 1;
+        }
+        slot += 1;
+    }
+    lut
+};
 
 impl Filter for Rainbow {
     fn shade(&self, cell: &Cell, frame: u64) -> Option<Rgb> {
         if cell.ch == ' ' {
             return cell.rgb;
         }
-        let base = (frame as f32 * Self::HUE_PER_FRAME
-            + cell.col as f32 * Self::HUE_PER_COL
-            + cell.row as f32 * Self::HUE_PER_ROW)
-            .rem_euclid(360.0);
-        // Per-slot hue offset + lightness: slot 1 (shadow) trails the front
-        // face by 90° and sits at 0.35 lightness so it reads as a shaded
-        // backing layer. Slot 2 (deep shadow on chrome) goes further still.
-        let (offset, lightness) = match slot_of(cell) {
-            Some(1) => (90.0, 0.35),
-            Some(2) => (180.0, 0.25),
-            _ => (0.0, 0.6),
-        };
-        Some(hsl_to_rgb(
-            (base + offset).rem_euclid(360.0),
-            1.0,
-            lightness,
-        ))
+        // Cells that carry no slot sentinel shade as the front face. Darker,
+        // hue-shifted slots read as a shaded backing layer.
+        let slot = slot_of(cell).map_or(0, usize::from);
+        // Reduce the frame first so the sum cannot overflow.
+        let hue = (frame % 360 * Self::HUE_PER_FRAME
+            + cell.col as u64 * Self::HUE_PER_COL
+            + cell.row as u64 * Self::HUE_PER_ROW
+            + RAINBOW_HUE_OFFSET[slot])
+            % 360;
+        Some(RAINBOW_LUT[slot][hue as usize])
     }
 }
 
@@ -136,11 +153,14 @@ fn noise(row: u32, col: u32, frame: u32) -> u8 {
     (x & 0xFF) as u8
 }
 
-pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Rgb {
+pub const fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Rgb {
     // HSL with h in degrees [0,360), s,l in [0,1]. Standard formula.
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     let hp = h / 60.0;
-    let x = c * (1.0 - (hp.rem_euclid(2.0) - 1.0).abs());
+    // `hp.rem_euclid(2.0)`, written out because `rem_euclid` is not const.
+    let r = hp % 2.0;
+    let r = if r < 0.0 { r + 2.0 } else { r };
+    let x = c * (1.0 - (r - 1.0).abs());
     let (r1, g1, b1) = match hp as u32 {
         0 => (c, x, 0.0),
         1 => (x, c, 0.0),
@@ -264,6 +284,56 @@ mod tests {
     fn fire_skips_spaces() {
         let f = Fire { rows: 6 };
         assert_eq!(f.shade(&cell(' ', 0, 0, None), 0), None);
+    }
+
+    #[test]
+    fn rainbow_lut_matches_hsl_to_rgb() {
+        for (row, &l) in RAINBOW_LUT.iter().zip(&RAINBOW_LIGHTNESS) {
+            for (hue, &rgb) in row.iter().enumerate() {
+                assert_eq!(
+                    rgb,
+                    hsl_to_rgb(hue as f32, 1.0, l),
+                    "lightness {l} hue {hue}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rainbow_matches_float_formula() {
+        // The float maths Rainbow used before the lookup table, kept here so
+        // the table path cannot drift from it.
+        fn reference(cell: &Cell, frame: u64) -> Rgb {
+            let base = (frame as f32 * 4.0 + cell.col as f32 * 3.0 + cell.row as f32 * 12.0)
+                .rem_euclid(360.0);
+            let (offset, lightness) = match slot_of(cell) {
+                Some(1) => (90.0, 0.35),
+                Some(2) => (180.0, 0.25),
+                _ => (0.0, 0.6),
+            };
+            hsl_to_rgb((base + offset).rem_euclid(360.0), 1.0, lightness)
+        }
+        let rgbs = [
+            None,
+            Some((10, 20, 30)),
+            Some(SLOT_SENTINELS[0]),
+            Some(SLOT_SENTINELS[1]),
+            Some(SLOT_SENTINELS[2]),
+        ];
+        for rgb in rgbs {
+            for row in 0..8 {
+                for col in (0..200).step_by(7) {
+                    for frame in [0, 1, 29, 89, 90, 359, 360, 1_000, 123_457] {
+                        let c = cell('█', row, col, rgb);
+                        assert_eq!(
+                            Rainbow.shade(&c, frame),
+                            Some(reference(&c, frame)),
+                            "rgb {rgb:?} row {row} col {col} frame {frame}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
