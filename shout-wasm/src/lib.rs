@@ -11,6 +11,8 @@
 //! `render_frame_html(cfg, frame)` for animated modes driven by the JS
 //! requestAnimationFrame loop.
 
+use std::cell::RefCell;
+
 use serde::Deserialize;
 use shout_core::emit_html::emit_html_body;
 use shout_core::parser::{
@@ -90,11 +92,43 @@ fn render_once_inner(cfg_json: &str) -> Result<String, String> {
     }
 }
 
+/// The cell grid for the last config `render_frame_html` saw, keyed on its
+/// JSON string. The playground sends the same JSON every frame, so this skips
+/// cfonts and `sgr::parse` on all but the first frame of a config.
+struct FrameCache {
+    cfg_json: String,
+    mode: Mode,
+    cells: Vec<Cell>,
+}
+
+thread_local! {
+    static FRAME_CACHE: RefCell<Option<FrameCache>> = const { RefCell::new(None) };
+}
+
 fn render_frame_inner(cfg_json: &str, frame: u32) -> Result<String, String> {
-    let cfg = cfg_from_json(cfg_json)?;
-    let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
-    let mode = cfg.mode.unwrap_or(Mode::Solid);
-    Ok(render_frame(&cells, mode, frame as u64))
+    // Take the cache out rather than holding a RefCell borrow across cfonts
+    // and the shader. The release profile is panic = "abort", so a panic traps
+    // without dropping guards: a borrow held at that point would stay set and
+    // every later frame would fail with "already borrowed". Taken out, a trap
+    // only loses the cache, and the next call rebuilds it.
+    let c = match FRAME_CACHE.take() {
+        Some(c) if c.cfg_json == cfg_json => c,
+        _ => {
+            let cfg = cfg_from_json(cfg_json)?;
+            let mut cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
+            // sgr::parse sizes the Vec from the raw ANSI length, several times
+            // the cell count. Drop the slack before holding it across frames.
+            cells.shrink_to_fit();
+            FrameCache {
+                cfg_json: cfg_json.to_string(),
+                mode: cfg.mode.unwrap_or(Mode::Solid),
+                cells,
+            }
+        }
+    };
+    let out = render_frame(&c.cells, c.mode, frame as u64);
+    FRAME_CACHE.set(Some(c));
+    Ok(out)
 }
 
 /// Render a single static frame as the inner `<pre>`-body HTML.
@@ -138,6 +172,44 @@ mod tests {
         let f30 = render_frame_inner(cfg, 30).unwrap();
         assert_ne!(f0, f30);
         assert!(f0.contains("<span"));
+    }
+
+    /// The frame path without the cache, as it was before the cache existed.
+    fn render_frame_uncached(cfg_json: &str, frame: u32) -> Result<String, String> {
+        let cfg = cfg_from_json(cfg_json)?;
+        let cells = render_cells(&cfg).map_err(|e| e.message().to_string())?;
+        Ok(render_frame(
+            &cells,
+            cfg.mode.unwrap_or(Mode::Solid),
+            frame as u64,
+        ))
+    }
+
+    #[test]
+    fn cached_frames_match_uncached_across_config_changes() {
+        let a = r#"{"text":"HI","font":"block","mode":"rainbow"}"#;
+        let b = r#"{"text":"HO","font":"block","mode":"rainbow"}"#;
+        let c = r#"{"text":"HO","font":"tiny","mode":"fire"}"#;
+        let bad = r#"{"text":"HO","font":"nope","mode":"fire"}"#;
+        for (cfg, frames) in [(a, 0..5), (b, 5..10), (c, 10..15), (a, 15..20)] {
+            for f in frames {
+                assert_eq!(
+                    render_frame_inner(cfg, f),
+                    render_frame_uncached(cfg, f),
+                    "{cfg} frame {f}"
+                );
+            }
+            assert!(render_frame_inner(bad, 0).is_err());
+        }
+    }
+
+    #[test]
+    fn frame_cache_is_put_back_after_a_frame() {
+        let cfg = r#"{"text":"HI","font":"block","mode":"fire"}"#;
+        render_frame_inner(cfg, 0).unwrap();
+        render_frame_inner(cfg, 1).unwrap();
+        let cached = FRAME_CACHE.with_borrow(|c| c.as_ref().map(|c| c.cfg_json.clone()));
+        assert_eq!(cached.as_deref(), Some(cfg));
     }
 
     #[test]
