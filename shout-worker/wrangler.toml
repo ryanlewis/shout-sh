@@ -32,6 +32,31 @@ not_found_handling = "none"
 binding = "SHOUT_EVENTS"
 dataset = "shout_events"
 
+# Per-client rate limits, keyed on the client IP (an IPv6 /64). See
+# app::rate_limit for which requests count against which limit; the
+# health check, /_app/*, /favicon.* and /og.png are exempt.
+#
+# Counters are per Cloudflare location and eventually consistent, so the
+# limits are approximate. They stop one client flooding the service, not
+# a client using it. Keep `period = 60`: app::RETRY_AFTER assumes it.
+# namespace_id only has to be unique within the Cloudflare account.
+#
+# General: 120 requests a minute. Someone curling banners, or a shell
+# loop over the 13 fonts, stays well under it; so does a small office
+# behind one IP address. It still caps a single client at about 2/s.
+[[ratelimits]]
+name = "RATE_LIMIT"
+namespace_id = "7001"
+simple = { limit = 120, period = 60 }
+
+# Animation streams: 10 a minute. A person trying out animations starts
+# a few and stops each with Ctrl-C. Each stream can run for 300s and
+# costs up to about 52s of CPU, so this is what bounds a client's cost.
+[[ratelimits]]
+name = "STREAM_LIMIT"
+namespace_id = "7002"
+simple = { limit = 10, period = 60 }
+
 # CPU time, not wall time: waiting between frames is free. The heaviest
 # stream the parser accepts is 3d + rainbow, ls=10, pad=10 and 200 wide
 # characters: 5.7ms and 1.36MB per frame (measured on an Apple M-series

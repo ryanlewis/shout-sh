@@ -10,7 +10,9 @@ BASE="http://127.0.0.1:${PORT}"
 LOG="$(mktemp)"
 TMP="$(mktemp -d)"
 
-./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" >"$LOG" 2>&1 &
+# A fresh state directory: wrangler dev keeps rate-limit counters on disk,
+# so a run within a minute of the last one would start over the limit.
+./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" >"$LOG" 2>&1 &
 WRANGLER=$!
 trap 'kill "$WRANGLER" 2>/dev/null || true; rm -rf "$LOG" "$TMP"' EXIT
 
@@ -72,5 +74,19 @@ redraws=$(grep -ao $'\x1b\\[[0-9]*A\r' "$TMP/stream" | wc -l | tr -d ' ')
 check "stream redraws (7-9)" "$((redraws >= 7 && redraws <= 9))" "1"
 check "HEAD on stream" "$(curl -s -I --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/rainbow/hi")" "200"
 check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$BASE/health")" "405"
+
+# Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
+# minute). This runs last because it uses the limit up.
+pids=()
+for _ in $(seq 1 12); do
+	curl -s -o /dev/null -w '%{http_code}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
+	pids+=($!)
+done
+# Not a bare `wait`: that would wait for wrangler too.
+wait "${pids[@]}"
+check "stream limit refuses a burst" "$(grep -c 429 "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
+check "429 type" "$(header content-type "$BASE/fire/boom?timeout=1")" "text/plain; charset=utf-8"
+check "429 retry-after" "$(header retry-after "$BASE/fire/boom?timeout=1")" "60"
+check "health exempt when limited" "$(curl -s "$BASE/health")" "ok"
 
 exit "$fail"

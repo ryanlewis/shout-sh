@@ -11,6 +11,7 @@
 //! ASSETS binding and drives `Body::Stream` on a timer.
 
 use std::borrow::Cow;
+use std::net::Ipv6Addr;
 use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
@@ -81,25 +82,7 @@ impl Reply {
 }
 
 pub fn handle(req: &Request) -> Reply {
-    let path = req.path;
-    // (route pattern, path parameter or "")
-    let named = match path {
-        "/" => Some(("/", "")),
-        "/health" => Some(("/health", "")),
-        "/favicon.ico" => Some(("/favicon.ico", "")),
-        "/favicon.svg" => Some(("/favicon.svg", "")),
-        "/og.png" => Some(("/og.png", "")),
-        "/fonts" => Some(("/fonts", "")),
-        "/presets" => Some(("/presets", "")),
-        _ => [
-            ("/fonts/", "/fonts/{name}"),
-            ("/presets/", "/presets/{name}"),
-            ("/_app/", "/_app/{file}"),
-        ]
-        .into_iter()
-        .find_map(|(prefix, route)| Some((route, param(path, prefix)?))),
-    };
-    let Some((route, arg)) = named else {
+    let Some((route, arg)) = named_route(req.path) else {
         let mut reply = render_fallback(req);
         // A HEAD response has no body, but the runtime would still wait
         // for the whole stream before sending the headers.
@@ -133,6 +116,99 @@ pub fn handle(req: &Request) -> Reply {
         "/fonts/{name}" => font_preview(&decode(arg)),
         "/presets/{name}" => preset_preview(&decode(arg)),
         _ => app_asset(&decode(arg)),
+    }
+}
+
+/// A per-client rate limit. Each one is a `[[ratelimits]]` binding in
+/// wrangler.toml, which holds the numbers; see the comment there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Limit {
+    /// Everything that is not exempt and not an animation stream.
+    General,
+    /// Animation streams. Stricter, because each one holds a connection
+    /// and burns CPU for up to 300s.
+    Stream,
+}
+
+/// Seconds a refused client should wait. Both bindings count over a 60s
+/// window (`period = 60` in wrangler.toml), so a minute always clears it.
+pub const RETRY_AFTER: &str = "60";
+
+/// Which rate limit applies to `req`, and the route to record if the
+/// request is refused. `None` means the request is exempt: the health
+/// check, and the files a browser loads with every page.
+///
+/// This runs before `handle`, so it must not render anything. It parses
+/// the directives to tell a stream from a static banner, using the same
+/// rules as `render_fallback`.
+pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
+    match named_route(req.path) {
+        Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => None,
+        Some((route, _)) => Some((Limit::General, route)),
+        None if url_too_long(req) => Some((Limit::General, ROUTE_RENDER)),
+        None if is_browser(req) => {
+            let route = browser_page(req.path).map_or(ROUTE_RENDER, |(route, _)| route);
+            Some((Limit::General, route))
+        }
+        None => {
+            let cfg = parse(req.path, req.query);
+            // HEAD never streams; see `handle`.
+            let stream = req.method != "HEAD" && !cfg.json && cfg.should_animate();
+            let limit = if stream {
+                Limit::Stream
+            } else {
+                Limit::General
+            };
+            Some((limit, ROUTE_RENDER))
+        }
+    }
+}
+
+/// The reply for a client over its limit. Plain text for browsers too:
+/// an HTML page would cost more to serve than the request it refuses.
+pub fn too_many_requests(route: &'static str) -> Reply {
+    Reply {
+        status: 429,
+        headers: vec![
+            ("content-type", TEXT_PLAIN.into()),
+            ("retry-after", RETRY_AFTER.into()),
+        ],
+        body: Body::Text("too many requests. try again in a minute.\n".into()),
+        event: Event::route(route, 429),
+    }
+}
+
+/// The rate-limit key for a client IP. An IPv6 client usually holds a
+/// whole /64, so it is keyed on that prefix; otherwise one client could
+/// get a fresh limit per address. IPv4 addresses are keyed as they are.
+pub fn rate_limit_key(ip: &str) -> String {
+    match ip.parse::<Ipv6Addr>() {
+        Ok(v6) if v6.to_ipv4_mapped().is_none() => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        _ => ip.into(),
+    }
+}
+
+/// The named route `path` matches, as (route pattern, path parameter or
+/// ""). `None` means the banner renderer handles it.
+fn named_route(path: &str) -> Option<(&'static str, &str)> {
+    match path {
+        "/" => Some(("/", "")),
+        "/health" => Some(("/health", "")),
+        "/favicon.ico" => Some(("/favicon.ico", "")),
+        "/favicon.svg" => Some(("/favicon.svg", "")),
+        "/og.png" => Some(("/og.png", "")),
+        "/fonts" => Some(("/fonts", "")),
+        "/presets" => Some(("/presets", "")),
+        _ => [
+            ("/fonts/", "/fonts/{name}"),
+            ("/presets/", "/presets/{name}"),
+            ("/_app/", "/_app/{file}"),
+        ]
+        .into_iter()
+        .find_map(|(prefix, route)| Some((route, param(path, prefix)?))),
     }
 }
 
@@ -283,9 +359,13 @@ fn browser_page(path: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn render_fallback(req: &Request) -> Reply {
+fn url_too_long(req: &Request) -> bool {
     let query_len = req.query.map(|q| q.len() + 1).unwrap_or(0);
-    if req.path.len() + query_len > MAX_URL_LEN {
+    req.path.len() + query_len > MAX_URL_LEN
+}
+
+fn render_fallback(req: &Request) -> Reply {
+    if url_too_long(req) {
         return Reply {
             status: 414,
             headers: vec![("content-type", TEXT_PLAIN.into())],

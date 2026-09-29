@@ -23,7 +23,7 @@ use worker::{
     Request, Response, ResponseBody, Result, event,
 };
 
-use crate::app::{self, Body, Reply};
+use crate::app::{self, Body, Limit, Reply};
 use crate::event::Event;
 use crate::stream::{Animation, Step};
 
@@ -31,6 +31,9 @@ use crate::stream::{Animation, Step};
 /// write is best effort and never fails the request.
 const EVENTS_BINDING: &str = "SHOUT_EVENTS";
 const ASSETS_BINDING: &str = "ASSETS";
+/// Rate-limit bindings, one per `app::Limit`. See `allowed`.
+const RATE_LIMIT_BINDING: &str = "RATE_LIMIT";
+const STREAM_LIMIT_BINDING: &str = "STREAM_LIMIT";
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -40,15 +43,39 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let accept = headers.get("accept")?;
     let user_agent = headers.get("user-agent")?;
     let method = req.method();
-    let reply = app::handle(&app::Request {
+    let areq = app::Request {
         method: method.as_ref(),
         path: url.path(),
         query: url.query(),
         accept: accept.as_deref(),
         user_agent: user_agent.as_deref(),
-    });
+    };
+    let client_ip = headers.get("cf-connecting-ip")?;
+    let reply = match app::rate_limit(&areq) {
+        Some((limit, route)) if !allowed(&env, limit, client_ip.as_deref()).await => {
+            app::too_many_requests(route)
+        }
+        _ => app::handle(&areq),
+    };
     let sink = env.analytics_engine(EVENTS_BINDING).ok();
     respond(reply, &env, sink, start, req.inner().signal()).await
+}
+
+/// Ask the rate-limit binding whether this client may go on. Fails open:
+/// a missing binding (local dev without it), a missing client IP or a
+/// binding error all allow the request.
+async fn allowed(env: &Env, limit: Limit, client_ip: Option<&str>) -> bool {
+    let binding = match limit {
+        Limit::General => RATE_LIMIT_BINDING,
+        Limit::Stream => STREAM_LIMIT_BINDING,
+    };
+    let (Some(ip), Ok(limiter)) = (client_ip, env.rate_limiter(binding)) else {
+        return true;
+    };
+    limiter
+        .limit(app::rate_limit_key(ip))
+        .await
+        .map_or(true, |outcome| outcome.success)
 }
 
 /// `future` resolves when the client disconnects. `request.signal` fires
