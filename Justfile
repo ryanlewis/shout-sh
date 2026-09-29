@@ -13,6 +13,12 @@ lint:
 fmt:
     cargo fmt --all
 
+# Render benchmarks for shout-core (criterion). Uses the bench profile, which
+# inherits the size-tuned release profile. Extra args go to criterion, for
+# example `just bench -- --save-baseline main` then `-- --baseline main`.
+bench *args:
+    cargo bench -p shout-core --bench render {{args}}
+
 # Build the browser-facing wasm bundle via wasm-pack.
 wasm-build:
     RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack build shout-wasm --target web --release
