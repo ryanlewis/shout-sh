@@ -12,6 +12,10 @@ crate-type = ["cdylib", "rlib"]
 shout-core = { path = "../shout-core" }
 percent-encoding = "2"
 serde_json = "1"
+# Keyed hash of the client key that names its StreamSlots object. See
+# slots::object_name.
+hmac = "=0.12.1"
+sha2 = "=0.10.9"
 
 # The Worker glue only builds for wasm32. Everything else in this crate is
 # plain Rust, so `cargo test --all` covers routing and stream framing on

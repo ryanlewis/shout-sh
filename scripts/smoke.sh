@@ -12,7 +12,10 @@ TMP="$(mktemp -d)"
 
 # A fresh state directory: wrangler dev keeps rate-limit counters on disk,
 # so a run within a minute of the last one would start over the limit.
-./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" >"$LOG" 2>&1 &
+# A throwaway SLOT_KEY_SECRET, so the open-stream cap runs (see below).
+# It overrides any value in .dev.vars.
+./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" \
+	--var "SLOT_KEY_SECRET:smoke-$RANDOM$RANDOM" >"$LOG" 2>&1 &
 WRANGLER=$!
 trap 'kill "$WRANGLER" 2>/dev/null || true; rm -rf "$LOG" "$TMP"' EXIT
 
@@ -77,16 +80,40 @@ check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$
 check "POST on stream" "$(curl -s -X POST --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
 check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/fire/boom")" "405"
 
+# Open-stream cap: wrangler dev runs the StreamSlots Durable Object
+# locally. Three open streams hold every slot, so a fourth is refused
+# until one ends. Uses 5 of the 10 streams STREAM_LIMIT allows a minute.
+pids=()
+for _ in 1 2 3; do
+	curl -s -o /dev/null "$BASE/fire/boom?timeout=3" &
+	pids+=($!)
+done
+sleep 1
+curl -s -D "$TMP/slots-headers" -o /dev/null "$BASE/fire/boom?timeout=3"
+check "4th open stream refused" "$(awk 'NR == 1 { print $2 }' "$TMP/slots-headers")" "429"
+retry=$(tr -d '\r' <"$TMP/slots-headers" | awk 'tolower($1) == "retry-after:" { print $2 }')
+# 1-3s until the oldest stream ends, plus slots::RETRY_SLACK_SECS (2).
+check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
+wait "${pids[@]}"
+# The release runs under waitUntil after the body ends, so it can land
+# after curl returns. Give it a moment.
+sleep 1
+check "slot freed when a stream ends" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "200"
+
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
 # minute). This runs last because it uses the limit up.
+# The open-stream cap refuses a few of the burst as well; the checks
+# after the burst only pass because the burst uses up STREAM_LIMIT.
 pids=()
 for _ in $(seq 1 12); do
-	curl -s -o /dev/null -w '%{http_code}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
+	curl -s -o /dev/null -w '%{http_code} %header{retry-after}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
 	pids+=($!)
 done
 # Not a bare `wait`: that would wait for wrangler too.
 wait "${pids[@]}"
-check "stream limit refuses a burst" "$(grep -c 429 "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
+# Only STREAM_LIMIT answers 429 with retry-after 60; the open-stream cap
+# gives a few seconds.
+check "stream limit refuses a burst" "$(grep -c '^429 60$' "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
 check "429 status" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "429"
 check "429 type" "$(header content-type "$BASE/fire/boom?timeout=1")" "text/plain; charset=utf-8"
 check "429 retry-after" "$(header retry-after "$BASE/fire/boom?timeout=1")" "60"

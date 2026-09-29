@@ -13,6 +13,7 @@
 
 pub mod app;
 pub mod event;
+pub mod slots;
 pub mod stream;
 
 #[cfg(target_arch = "wasm32")]

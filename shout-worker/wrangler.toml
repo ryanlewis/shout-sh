@@ -1,6 +1,7 @@
 # The name is historical. This Worker used to proxy shout.sh to a VM.
-# Deploying under the same name replaces it in place: the routes stay, no
-# DNS change is needed, and `wrangler rollback` returns to the proxy.
+# Deploying under the same name replaces it in place: the routes stay and
+# no DNS change is needed. `wrangler rollback` cannot return to the proxy
+# or any version before the StreamSlots migration below.
 name = "shout-sh-proxy"
 # Built by `just worker-build`, not by wrangler. There is no [build]
 # command on purpose: `wrangler deploy` in CI holds the Cloudflare token,
@@ -57,6 +58,24 @@ simple = { limit = 120, period = 60 }
 name = "STREAM_LIMIT"
 namespace_id = "7002"
 simple = { limit = 10, period = 60 }
+
+# Open animation streams per client: at most slots::MAX_STREAMS (3) at
+# once. STREAM_LIMIT above counts new streams a minute, but a stream can
+# stay open for 300s, so a client could still hold many at once. One
+# StreamSlots object per client holds its leases: slot ids and expiry
+# times only. The object's name is HMAC-SHA256 of the rate-limit key
+# under the SLOT_KEY_SECRET secret, never the address. Without that
+# secret the cap is off. See src/slots.rs and src/glue.rs.
+[[durable_objects.bindings]]
+name = "STREAM_SLOTS"
+class_name = "StreamSlots"
+
+# Creates the StreamSlots namespace, SQLite-backed. Never edit or remove a
+# migration once deployed; a later change adds a new tag. `wrangler
+# rollback` cannot go back past this migration.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StreamSlots"]
 
 # CPU time, not wall time: waiting between frames is free. The heaviest
 # stream the parser accepts is 3d + rainbow, ls=10, pad=10 and 200 wide

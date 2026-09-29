@@ -130,6 +130,16 @@ streams a minute on top. over the limit, shout.sh answers
 cloudflare location and are approximate. the numbers live in
 `shout-worker/wrangler.toml`.
 
+a client can also hold at most 3 animated streams open at once
+(`MAX_STREAMS` in `shout-worker/src/slots.rs`). a fourth
+gets `429 too many requests`, with `Retry-After` set to the seconds until
+the oldest open stream reaches its timeout, plus 2. closing a stream frees its
+slot straight away. a cloudflare durable object per client keeps the
+open slots: a random id and an end time for each, nothing else. the
+object is named by a keyed hash (hmac-sha256) of the client ip, not the
+ip. if the `SLOT_KEY_SECRET` secret is unset, or the object cannot be
+reached within a second, the stream goes ahead.
+
 ## endpoints
 
 | path            | description          |
@@ -166,6 +176,10 @@ $ just worker-build   # the worker → shout-worker/build/ via worker-build
 $ just dev            # esbuild watcher + wrangler dev on :8787
 ```
 
+`just dev` reads secrets from `shout-worker/.dev.vars` (gitignored). for the
+open-stream cap, put a throwaway `SLOT_KEY_SECRET=...` line there; without
+it the cap is off. `just smoke` passes its own value.
+
 needs rust with the `wasm32-unknown-unknown` target, `wasm-pack`,
 `worker-build` (`cargo install worker-build --version =0.8.6 --locked`),
 node and pnpm.
@@ -199,7 +213,9 @@ the job skips the upload.
 
 `shout-worker/wrangler.toml` sets the routes (`shout.sh/*`, `www.shout.sh/*`),
 a per-request cpu limit (needs the workers paid plan), the two rate-limit
-bindings and the `SHOUT_EVENTS` analytics engine dataset. `src/event.rs` documents its
+bindings, the `STREAM_SLOTS` durable object and its migration, and the
+`SHOUT_EVENTS` analytics engine dataset. the `SLOT_KEY_SECRET` secret is set
+once with `wrangler secret put`, not in ci. `src/event.rs` documents its
 columns.
 
 ## license

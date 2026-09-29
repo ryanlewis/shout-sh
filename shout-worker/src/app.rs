@@ -22,6 +22,7 @@ use shout_core::presets;
 use shout_core::render::{RenderError, banner, render_config};
 
 use crate::event::{Event, ROUTE_RENDER, RenderKind};
+use crate::slots;
 use crate::stream::Animation;
 
 /// Help text is built once per isolate; every `GET /` serves the same bytes.
@@ -123,6 +124,10 @@ pub enum Limit {
     /// Animation streams. Stricter, because each one holds a connection
     /// for up to 300s and sends up to `stream::MAX_STREAM_BYTES`.
     Stream,
+    /// Too many animation streams open at once. Not a `[[ratelimits]]`
+    /// binding and never returned by `rate_limit`: the `StreamSlots`
+    /// Durable Object applies it, see `slots` and `too_many_streams`.
+    StreamSlots,
 }
 
 impl Limit {
@@ -132,6 +137,7 @@ impl Limit {
         match self {
             Self::General => "rate_limit_general",
             Self::Stream => "rate_limit_stream",
+            Self::StreamSlots => "stream_slots",
         }
     }
 }
@@ -199,6 +205,26 @@ fn method_not_allowed(req: &Request) -> Reply {
         ],
         body: Body::Text("method not allowed.\n".into()),
         event: Event::route(route, 405),
+    }
+}
+
+/// The reply for a client that already holds `slots::MAX_STREAMS` open
+/// animation streams. `retry_after` is in seconds; see `Slots::acquire`.
+pub fn too_many_streams(retry_after: u64) -> Reply {
+    Reply {
+        status: 429,
+        headers: vec![
+            ("content-type", TEXT_PLAIN.into()),
+            ("retry-after", retry_after.to_string().into()),
+        ],
+        body: Body::Text(format!(
+            "too many open streams. at most {} at a time; close one and try again.\n",
+            slots::MAX_STREAMS
+        )),
+        event: Event {
+            error: Limit::StreamSlots.reason(),
+            ..Event::route(ROUTE_RENDER, 429)
+        },
     }
 }
 
