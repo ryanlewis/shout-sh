@@ -14,7 +14,7 @@
 use shout_core::parser::{Mode, RenderConfig};
 use shout_core::render::{RenderError, emit_shaded, render_cells};
 use shout_core::sgr::{self, Cell, ansi};
-use shout_core::shader::{Filter, Fire, Identity, Rainbow};
+use shout_core::shader::Shader;
 
 /// Most bytes per second one stream may send. The largest banner a normal
 /// phrase makes (three words in `3d`, about 58 KB a frame) needs 0.6 MB/s
@@ -167,33 +167,5 @@ impl Animation {
             self.next_due_ms = self.start_ms + missed * self.tick_ms;
         }
         Step::Frame(out)
-    }
-}
-
-/// Static dispatch over the three concrete filters so the per-cell
-/// `shade` call in the hot path stays devirtualized.
-enum Shader {
-    Rainbow,
-    Fire(Fire),
-    Identity,
-}
-
-impl Shader {
-    fn for_mode(mode: Mode, rows: u16) -> Self {
-        match mode {
-            Mode::Rainbow => Self::Rainbow,
-            Mode::Fire => Self::Fire(Fire { rows }),
-            Mode::Solid => Self::Identity,
-        }
-    }
-}
-
-impl Filter for Shader {
-    fn shade(&self, cell: &Cell, frame: u64) -> Option<sgr::Rgb> {
-        match self {
-            Self::Rainbow => Rainbow.shade(cell, frame),
-            Self::Fire(f) => f.shade(cell, frame),
-            Self::Identity => Identity.shade(cell, frame),
-        }
     }
 }
