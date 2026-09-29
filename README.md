@@ -123,7 +123,7 @@ don't mix.
 
 ### limits
 
-each client ip (an ipv6 /64) gets 120 requests a minute, and 10 animated
+each client ip (an ipv6 /64) gets 30 requests a minute, and 5 animated
 streams a minute on top. over the limit, shout.sh answers
 `429 too many requests` with `Retry-After: 60`. `/health`, `/_app/*`,
 `/favicon.*` and `/og.png` are not counted. the counts are kept per
@@ -134,7 +134,8 @@ a client can also hold at most 3 animated streams open at once
 (`MAX_STREAMS` in `shout-worker/src/slots.rs`). a fourth
 gets `429 too many requests`, with `Retry-After` set to the seconds until
 the oldest open stream reaches its timeout, plus 2. closing a stream frees its
-slot straight away. a cloudflare durable object per client keeps the
+slot straight away. a stream refused because 3 are already open still
+counts toward the 5 a minute. a cloudflare durable object per client keeps the
 open slots: a random id and an end time for each, nothing else. the
 object is named by a keyed hash (hmac-sha256) of the client ip, not the
 ip. if the `SLOT_KEY_SECRET` secret is unset, or the object cannot be

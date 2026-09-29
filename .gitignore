@@ -13,6 +13,8 @@
 /shout-worker/.wrangler/
 /shout-worker/build/
 /shout-worker/node_modules/
+# Written and removed by scripts/smoke.sh.
+/shout-worker/wrangler.smoke.*.toml
 # Local secrets for wrangler dev (SLOT_KEY_SECRET).
 /shout-worker/.dev.vars
 

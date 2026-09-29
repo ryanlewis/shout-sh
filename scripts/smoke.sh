@@ -9,15 +9,44 @@ PORT="${PORT:-8797}"
 BASE="http://127.0.0.1:${PORT}"
 LOG="$(mktemp)"
 TMP="$(mktemp -d)"
+# Next to wrangler.toml, so its relative paths (../web/dist, build/)
+# still resolve. Named per run, so two runs in one checkout do not
+# overwrite or delete each other's copy.
+CONFIG="wrangler.smoke.$$.toml"
+WRANGLER=
+trap 'if [[ -n "$WRANGLER" ]]; then kill "$WRANGLER" 2>/dev/null || true; fi; rm -rf "$LOG" "$TMP" "$CONFIG"' EXIT
+
+# The `limit` of one [[ratelimits]] binding in a wrangler config.
+limit_of() {
+	awk -v want="\"$2\"" '/^\[/ { name = "" } $1 == "name" { name = $3 } $1 == "simple" && name == want { match($0, /limit = [0-9]+/); print substr($0, RSTART + 8, RLENGTH - 8) }' "$1"
+}
+
+# The production limits are too low for one run of this script, so it
+# runs on a copy with other limits: RATE_LIMIT 1000, so the general
+# requests never reach it, and STREAM_LIMIT 10, which the budget below
+# is written against. The copy is made from wrangler.toml on every run,
+# and the production values are checked in wrangler.toml itself, so the
+# copy cannot hide a wrong edit there.
+awk '/^\[/ { name = "" }
+	$1 == "name" { name = $3 }
+	$1 == "simple" && name == "\"RATE_LIMIT\"" { sub(/limit = [0-9]+/, "limit = 1000") }
+	$1 == "simple" && name == "\"STREAM_LIMIT\"" { sub(/limit = [0-9]+/, "limit = 10") }
+	{ print }' wrangler.toml >"$CONFIG"
+prod="$(limit_of wrangler.toml RATE_LIMIT) $(limit_of wrangler.toml STREAM_LIMIT)"
+smoke="$(limit_of "$CONFIG" RATE_LIMIT) $(limit_of "$CONFIG" STREAM_LIMIT)"
+if [[ "$prod" != "30 5" || "$smoke" != "1000 10" ]]; then
+	echo "FAIL  limits: wrangler.toml has '$prod', want '30 5'; $CONFIG has '$smoke', want '1000 10'"
+	exit 1
+fi
+echo "ok    wrangler.toml limits 30 and 5"
 
 # A fresh state directory: wrangler dev keeps rate-limit counters on disk,
 # so a run within a minute of the last one would start over the limit.
 # A throwaway SLOT_KEY_SECRET, so the open-stream cap runs (see below).
 # It overrides any value in .dev.vars.
-./node_modules/.bin/wrangler dev --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" \
+./node_modules/.bin/wrangler dev -c "$CONFIG" --ip 127.0.0.1 --port "$PORT" --persist-to "$TMP/state" \
 	--var "SLOT_KEY_SECRET:smoke-$RANDOM$RANDOM" >"$LOG" 2>&1 &
 WRANGLER=$!
-trap 'kill "$WRANGLER" 2>/dev/null || true; rm -rf "$LOG" "$TMP"' EXIT
 
 for _ in $(seq 1 180); do
 	curl -fs -o /dev/null "$BASE/health" && break
@@ -100,11 +129,12 @@ check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/nul
 
 # Open-stream cap: wrangler dev runs the StreamSlots Durable Object
 # locally. Three open streams hold every slot, so a fourth is refused
-# until one ends. STREAM_LIMIT allows 10 a minute and counts every GET
-# that would stream, refused or not. This script sends the 1s stream above
-# (1), the 3 held streams and the refused 4th (4), and the slot-freed
-# request plus up to 5 retries (1-6). A passing run uses at most 10 before
-# the burst below, which is meant to use the rest up.
+# until one ends. STREAM_LIMIT allows 10 a minute in $CONFIG (5 in
+# production) and counts every GET that would stream, refused or not.
+# This script sends the 1s stream above (1), the 3 held streams and the
+# refused 4th (4), and the slot-freed request plus up to 5 retries
+# (1-6). A passing run uses at most 10 before the burst below, which is
+# meant to use the rest up.
 pids=()
 for i in 1 2 3; do
 	curl -s -o "$TMP/slot$i" "$BASE/fire/boom?timeout=3" &
@@ -134,9 +164,12 @@ done
 check "slot freed when a stream ends" "$freed" "200"
 
 # Rate limit: wrangler dev simulates the STREAM_LIMIT binding (10 a
-# minute). This runs last because it uses the limit up.
+# minute in $CONFIG). This runs last because it uses the limit up.
 # The open-stream cap refuses a few of the burst as well; the checks
 # after the burst only pass because the burst uses up STREAM_LIMIT.
+# miniflare's windows are fixed minutes, so start before second 50.
+early_in_minute() { (($(date +%-S) < 50)); }
+wait_until 110 early_in_minute || true
 pids=()
 for _ in $(seq 1 12); do
 	curl -s -o /dev/null -w '%{http_code} %header{retry-after}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &

@@ -44,22 +44,29 @@ dataset = "shout_events"
 # a client using it. Keep `period = 60`: app::RETRY_AFTER assumes it.
 # namespace_id only has to be unique within the Cloudflare account.
 #
-# General: 120 requests a minute. Someone curling banners, or a shell
-# loop over the 13 fonts, stays well under it; so does a small office
-# behind one IP address. It still caps a single client at about 2/s.
+# General: 30 requests a minute. A person trying fonts by hand sends a
+# few a minute. A shell loop over the 13 fonts is 13 requests, so it
+# fits. Loading the playground page costs 1: it renders in the browser,
+# and /_app/* is exempt. The counts are per Cloudflare location, so a
+# client can sometimes get a little more than 30.
 [[ratelimits]]
 name = "RATE_LIMIT"
 namespace_id = "7001"
-simple = { limit = 120, period = 60 }
+simple = { limit = 30, period = 60 }
 
-# Animation streams: 10 a minute. A person trying out animations starts
+# Animation streams: 5 a minute. A person trying out animations starts
 # a few and stops each with Ctrl-C. Each stream holds a connection for
 # up to 300s and sends up to 64MB (see src/stream.rs), so this is what
-# bounds a client's streaming cost.
+# bounds a client's streaming cost. Like the general limit, the count is
+# per Cloudflare location and approximate.
+#
+# scripts/smoke.sh runs wrangler dev on a copy of this file with other
+# limits, and checks that this file still has 30 and 5. Change both
+# together.
 [[ratelimits]]
 name = "STREAM_LIMIT"
 namespace_id = "7002"
-simple = { limit = 10, period = 60 }
+simple = { limit = 5, period = 60 }
 
 # Open animation streams per client: at most slots::MAX_STREAMS (3) at
 # once. STREAM_LIMIT above counts new streams a minute, but a stream can
