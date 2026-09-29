@@ -9,8 +9,10 @@
 //! Render benchmarks. Run with `just bench`.
 //!
 //! `render_cells` is the one-off cost of a request: cfonts plus
-//! `sgr::parse`. `emit_shaded` is the per-frame cost of an animated stream.
-//! Configs match what the Worker builds for a curl request (`browser` off).
+//! `sgr::parse`. `emit_shaded` is the bulk of the per-frame cost of an
+//! animated stream. Configs match what the Worker builds for a curl request
+//! (`browser` off). cfonts then wraps at the terminal width, so run through
+//! `just bench`, which detaches the terminal to get the Worker's 80 columns.
 
 use std::hint::black_box;
 
@@ -41,9 +43,9 @@ fn bench_render_cells(c: &mut Criterion) {
         for (len, text) in [("short", SHORT), ("long", LONG)] {
             // Rainbow is the mode a stream renders with most. It also takes
             // the multi-slot sentinel path on `block`.
-            let cfg = cfg(text, font, Mode::Rainbow);
+            let config = cfg(text, font, Mode::Rainbow);
             g.bench_function(format!("{font}/{len}"), |b| {
-                b.iter(|| render_cells(black_box(&cfg)).unwrap())
+                b.iter(|| render_cells(black_box(&config)).unwrap())
             });
         }
     }
