@@ -206,5 +206,9 @@ fn ipv6_keys_on_the_slash_64() {
 #[test]
 fn unparseable_ip_is_used_as_is() {
     assert_eq!(rate_limit_key("not-an-ip"), "not-an-ip");
+}
+
+#[test]
+fn ipv4_mapped_ipv6_keys_on_the_address() {
     assert_eq!(rate_limit_key("::ffff:203.0.113.7"), "::ffff:203.0.113.7");
 }

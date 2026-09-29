@@ -85,6 +85,7 @@ done
 # Not a bare `wait`: that would wait for wrangler too.
 wait "${pids[@]}"
 check "stream limit refuses a burst" "$(grep -c 429 "$TMP/codes" | awk '{ print ($1 > 0) }')" "1"
+check "429 status" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")" "429"
 check "429 type" "$(header content-type "$BASE/fire/boom?timeout=1")" "text/plain; charset=utf-8"
 check "429 retry-after" "$(header retry-after "$BASE/fire/boom?timeout=1")" "60"
 check "health exempt when limited" "$(curl -s "$BASE/health")" "ok"

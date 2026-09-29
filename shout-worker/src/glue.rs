@@ -20,7 +20,7 @@ use worker::wasm_bindgen_futures::JsFuture;
 use worker::web_sys::AbortSignal;
 use worker::{
     AnalyticsEngineDataPointBuilder, AnalyticsEngineDataset, Context, Date, Delay, Env, Headers,
-    Request, Response, ResponseBody, Result, event,
+    Request, Response, ResponseBody, Result, console_error, event,
 };
 
 use crate::app::{self, Body, Limit, Reply};
@@ -62,20 +62,32 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 }
 
 /// Ask the rate-limit binding whether this client may go on. Fails open:
-/// a missing binding (local dev without it), a missing client IP or a
-/// binding error all allow the request.
+/// a missing binding, a missing client IP or a binding error all allow
+/// the request. Binding problems are logged, so a broken limit shows up
+/// in the Worker logs instead of passing silently.
 async fn allowed(env: &Env, limit: Limit, client_ip: Option<&str>) -> bool {
     let binding = match limit {
         Limit::General => RATE_LIMIT_BINDING,
         Limit::Stream => STREAM_LIMIT_BINDING,
     };
-    let (Some(ip), Ok(limiter)) = (client_ip, env.rate_limiter(binding)) else {
+    let Some(ip) = client_ip else {
         return true;
     };
-    limiter
-        .limit(app::rate_limit_key(ip))
-        .await
-        .map_or(true, |outcome| outcome.success)
+    let limiter = match env.rate_limiter(binding) {
+        Ok(limiter) => limiter,
+        Err(e) => {
+            console_error!("rate limit binding {binding} unavailable: {e}");
+            return true;
+        }
+    };
+    match limiter.limit(app::rate_limit_key(ip)).await {
+        Ok(outcome) => outcome.success,
+        // Not the error text: it could echo the key, which is the IP.
+        Err(_) => {
+            console_error!("rate limit binding {binding} failed");
+            true
+        }
+    }
 }
 
 /// `future` resolves when the client disconnects. `request.signal` fires

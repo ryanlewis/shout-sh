@@ -138,29 +138,21 @@ pub const RETRY_AFTER: &str = "60";
 /// request is refused. `None` means the request is exempt: the health
 /// check, and the files a browser loads with every page.
 ///
-/// This runs before `handle`, so it must not render anything. It parses
-/// the directives to tell a stream from a static banner, using the same
-/// rules as `render_fallback`.
+/// This runs before `handle`, so it must not render anything. It shares
+/// `fallback` with `render_fallback` to tell a stream from a static banner.
 pub fn rate_limit(req: &Request) -> Option<(Limit, &'static str)> {
     match named_route(req.path) {
         Some(("/health" | "/favicon.ico" | "/favicon.svg" | "/og.png" | "/_app/{file}", _)) => None,
         Some((route, _)) => Some((Limit::General, route)),
-        None if url_too_long(req) => Some((Limit::General, ROUTE_RENDER)),
-        None if is_browser(req) => {
-            let route = browser_page(req.path).map_or(ROUTE_RENDER, |(route, _)| route);
-            Some((Limit::General, route))
-        }
-        None => {
-            let cfg = parse(req.path, req.query);
+        None => match fallback(req) {
+            Fallback::TooLong => Some((Limit::General, ROUTE_RENDER)),
+            Fallback::Page(route, _) => Some((Limit::General, route)),
             // HEAD never streams; see `handle`.
-            let stream = req.method != "HEAD" && !cfg.json && cfg.should_animate();
-            let limit = if stream {
-                Limit::Stream
-            } else {
-                Limit::General
-            };
-            Some((limit, ROUTE_RENDER))
-        }
+            Fallback::Render(cfg) if req.method != "HEAD" && cfg.should_animate() => {
+                Some((Limit::Stream, ROUTE_RENDER))
+            }
+            Fallback::Render(_) => Some((Limit::General, ROUTE_RENDER)),
+        },
     }
 }
 
@@ -364,23 +356,43 @@ fn url_too_long(req: &Request) -> bool {
     req.path.len() + query_len > MAX_URL_LEN
 }
 
-fn render_fallback(req: &Request) -> Reply {
+/// What the banner renderer does with a request no named route matched.
+enum Fallback {
+    TooLong,
+    /// An HTML page for a browser, as (route, asset).
+    Page(&'static str, &'static str),
+    /// Render a banner. A browser's config already has `once` set.
+    Render(RenderConfig),
+}
+
+fn fallback(req: &Request) -> Fallback {
     if url_too_long(req) {
-        return Reply {
-            status: 414,
-            headers: vec![("content-type", TEXT_PLAIN.into())],
-            body: Body::Text("url too long.\n".into()),
-            event: Event::route(ROUTE_RENDER, 414),
-        };
+        return Fallback::TooLong;
     }
     let browser = is_browser(req);
     if browser && let Some((route, asset)) = browser_page(req.path) {
-        return html_page(route, asset);
+        return Fallback::Page(route, asset);
     }
     let mut cfg = parse(req.path, req.query);
     if browser {
         cfg.once = true;
     }
+    Fallback::Render(cfg)
+}
+
+fn render_fallback(req: &Request) -> Reply {
+    let cfg = match fallback(req) {
+        Fallback::TooLong => {
+            return Reply {
+                status: 414,
+                headers: vec![("content-type", TEXT_PLAIN.into())],
+                body: Body::Text("url too long.\n".into()),
+                event: Event::route(ROUTE_RENDER, 414),
+            };
+        }
+        Fallback::Page(route, asset) => return html_page(route, asset),
+        Fallback::Render(cfg) => cfg,
+    };
 
     // JSON always returns a single static frame.
     if !cfg.json && cfg.should_animate() {
