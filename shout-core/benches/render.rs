@@ -49,6 +49,11 @@ fn bench_render_cells(c: &mut Criterion) {
             });
         }
     }
+    // Fire on a one-slot font takes cfonts' transition_gradient path.
+    let config = cfg(LONG, "simple", Mode::Fire);
+    g.bench_function("fire/simple/long", |b| {
+        b.iter(|| render_cells(black_box(&config)).unwrap())
+    });
     g.finish();
 }
 
