@@ -100,7 +100,11 @@ check "unknown method on stream" "$(curl -s -X PROPFIND --max-time 5 -o /dev/nul
 
 # Open-stream cap: wrangler dev runs the StreamSlots Durable Object
 # locally. Three open streams hold every slot, so a fourth is refused
-# until one ends. Uses 5 of the 10 streams STREAM_LIMIT allows a minute.
+# until one ends. STREAM_LIMIT allows 10 a minute and counts every GET
+# that would stream, refused or not. This script sends the 1s stream above
+# (1), the 3 held streams and the refused 4th (4), and the slot-freed
+# request plus up to 5 retries (1-6). A passing run uses at most 10 before
+# the burst below, which is meant to use the rest up.
 pids=()
 for i in 1 2 3; do
 	curl -s -o "$TMP/slot$i" "$BASE/fire/boom?timeout=3" &
@@ -120,7 +124,7 @@ check "4th stream retry-after (3-5)" "$((retry >= 3 && retry <= 5))" "1"
 wait "${pids[@]}"
 # The release runs under waitUntil after the body ends, so it can land
 # after curl returns. Retry until a stream is accepted, for at most 3s.
-# A refused retry still counts against STREAM_LIMIT, which has 5 left here.
+# A refused retry still counts against STREAM_LIMIT; see the count above.
 freed=000
 for _ in $(seq 1 6); do
 	freed=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fire/boom?timeout=1")
