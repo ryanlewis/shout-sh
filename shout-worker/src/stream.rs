@@ -26,8 +26,9 @@ pub const MAX_STREAM_BYTES: u64 = 64_000_000;
 
 /// Lower `fps`, then `timeout`, so that a stream whose redraws are
 /// `frame_bytes` long stays under `MAX_BYTES_PER_SEC` and
-/// `MAX_STREAM_BYTES`. Never raises either value, and never caps below 1.
-/// A frame bigger than `MAX_BYTES_PER_SEC` still gets 1 fps.
+/// `MAX_STREAM_BYTES`. Never raises either value (an `fps` of 0 is read
+/// as 1), and never caps below 1. A frame bigger than
+/// `MAX_BYTES_PER_SEC` still gets 1 fps.
 ///
 /// `frame_bytes` comes from frame 0. Later frames vary with the shader:
 /// fire frames measured up to about 4% bigger, so the ceilings can be
@@ -35,8 +36,13 @@ pub const MAX_STREAM_BYTES: u64 = 64_000_000;
 pub fn cap(frame_bytes: usize, fps: u32, timeout: u32) -> (u32, u32) {
     let frame = (frame_bytes as u64).max(1);
     let fps_cap = (MAX_BYTES_PER_SEC / frame).max(1);
-    let fps = u64::from(fps).min(fps_cap);
-    let timeout_cap = (MAX_STREAM_BYTES / (frame * fps.max(1))).max(1);
+    let fps = u64::from(fps.max(1)).min(fps_cap);
+    // The stream ticks every `1000 / fps` ms, rounded down, and sends a
+    // frame on every tick before the deadline. Size the timeout from that
+    // tick so the rounding does not add frames past the budget.
+    let tick_ms = 1000 / fps;
+    let frames = MAX_STREAM_BYTES / frame;
+    let timeout_cap = (frames * tick_ms / 1000).max(1);
     let timeout = u64::from(timeout).min(timeout_cap);
     // Both are at most their u32 inputs, so the casts cannot truncate.
     (fps as u32, timeout as u32)

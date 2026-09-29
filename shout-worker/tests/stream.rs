@@ -240,6 +240,9 @@ fn cap_leaves_small_frames_alone() {
 fn cap_lowers_fps_then_timeout() {
     // 200 KB frames: 5 fps fits 1 MB/s; 64 MB at 1 MB/s is 64 s.
     assert_eq!(cap(200_000, 30, 300), (5, 64));
+    // 300 KB frames: 3 fps ticks every 333 ms, so 213 frames fit in 64 MB
+    // and 70 s sends 211 of them. 71 s would send 214.
+    assert_eq!(cap(300_000, 30, 300), (3, 70));
     // Bigger than a second's budget: 1 fps, and 64 MB / 2 MB is 32 s.
     assert_eq!(cap(2_000_000, 30, 300), (1, 32));
     // Bigger than the whole stream's budget: one frame a second for 1 s.
@@ -334,7 +337,7 @@ fn capped_stream_keeps_its_header_on_head() {
 #[test]
 fn large_banner_lowers_fps_before_timeout() {
     // About 270 KB a frame: 3 fps fits 1 MB/s, and 64 MB at 3 fps lasts
-    // 79 s, so the default 60 s timeout stands.
+    // 78 s, so the default 60 s timeout stands.
     let r = get(&format!("/rainbow+block/{}", "W".repeat(200)));
     assert_eq!(r.header(CAPPED_HEADER), Some("fps=3; timeout=60"));
 }
