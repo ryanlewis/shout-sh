@@ -121,6 +121,15 @@ supported: `font`, `mode`, `color`, `preset`, `format`, `animate`, `once`,
 `format=json` always returns a single static frame — json and animation
 don't mix.
 
+### limits
+
+each client ip (an ipv6 /64) gets 120 requests a minute, and 10 animated
+streams a minute on top. over the limit, shout.sh answers
+`429 too many requests` with `Retry-After: 60`. `/health`, `/_app/*`,
+`/favicon.*` and `/og.png` are not counted. the counts are kept per
+cloudflare location and are approximate. the numbers live in
+`shout-worker/wrangler.toml`.
+
 ## endpoints
 
 | path            | description          |
@@ -189,8 +198,8 @@ the build toolchain never shares a runner with the token. without the token
 the job skips the upload.
 
 `shout-worker/wrangler.toml` sets the routes (`shout.sh/*`, `www.shout.sh/*`),
-a per-request cpu limit (needs the workers paid plan) and the
-`SHOUT_EVENTS` analytics engine dataset. `src/event.rs` documents its
+a per-request cpu limit (needs the workers paid plan), the two rate-limit
+bindings and the `SHOUT_EVENTS` analytics engine dataset. `src/event.rs` documents its
 columns.
 
 ## license

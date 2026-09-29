@@ -20,10 +20,10 @@ use worker::wasm_bindgen_futures::JsFuture;
 use worker::web_sys::AbortSignal;
 use worker::{
     AnalyticsEngineDataPointBuilder, AnalyticsEngineDataset, Context, Date, Delay, Env, Headers,
-    Request, Response, ResponseBody, Result, event,
+    Request, Response, ResponseBody, Result, console_error, event,
 };
 
-use crate::app::{self, Body, Reply};
+use crate::app::{self, Body, Limit, Reply};
 use crate::event::Event;
 use crate::stream::{Animation, Step};
 
@@ -31,6 +31,9 @@ use crate::stream::{Animation, Step};
 /// write is best effort and never fails the request.
 const EVENTS_BINDING: &str = "SHOUT_EVENTS";
 const ASSETS_BINDING: &str = "ASSETS";
+/// Rate-limit bindings, one per `app::Limit`. See `allowed`.
+const RATE_LIMIT_BINDING: &str = "RATE_LIMIT";
+const STREAM_LIMIT_BINDING: &str = "STREAM_LIMIT";
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -40,15 +43,51 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let accept = headers.get("accept")?;
     let user_agent = headers.get("user-agent")?;
     let method = req.method();
-    let reply = app::handle(&app::Request {
+    let areq = app::Request {
         method: method.as_ref(),
         path: url.path(),
         query: url.query(),
         accept: accept.as_deref(),
         user_agent: user_agent.as_deref(),
-    });
+    };
+    let client_ip = headers.get("cf-connecting-ip")?;
+    let reply = match app::rate_limit(&areq) {
+        Some((limit, route)) if !allowed(&env, limit, client_ip.as_deref()).await => {
+            app::too_many_requests(route)
+        }
+        _ => app::handle(&areq),
+    };
     let sink = env.analytics_engine(EVENTS_BINDING).ok();
     respond(reply, &env, sink, start, req.inner().signal()).await
+}
+
+/// Ask the rate-limit binding whether this client may go on. Fails open:
+/// a missing binding, a missing client IP or a binding error all allow
+/// the request. Binding problems are logged, so a broken limit shows up
+/// in the Worker logs instead of passing silently.
+async fn allowed(env: &Env, limit: Limit, client_ip: Option<&str>) -> bool {
+    let binding = match limit {
+        Limit::General => RATE_LIMIT_BINDING,
+        Limit::Stream => STREAM_LIMIT_BINDING,
+    };
+    let Some(ip) = client_ip else {
+        return true;
+    };
+    let limiter = match env.rate_limiter(binding) {
+        Ok(limiter) => limiter,
+        Err(e) => {
+            console_error!("rate limit binding {binding} unavailable: {e}");
+            return true;
+        }
+    };
+    match limiter.limit(app::rate_limit_key(ip)).await {
+        Ok(outcome) => outcome.success,
+        // Not the error text: it could echo the key, which is the IP.
+        Err(_) => {
+            console_error!("rate limit binding {binding} failed");
+            true
+        }
+    }
 }
 
 /// `future` resolves when the client disconnects. `request.signal` fires
