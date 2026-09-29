@@ -20,7 +20,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use shout_core::parser::{Mode, RenderConfig};
 use shout_core::render::{emit_shaded, render_cells};
 use shout_core::sgr::{self, Cell};
-use shout_core::shader::{Filter, Fire, Identity, Rainbow};
+use shout_core::shader::Shader;
 
 const SHORT: &str = "shout";
 const LONG: &str = "the quick brown fox jumps over the lazy dog";
@@ -63,12 +63,13 @@ fn size(cells: &[Cell]) -> (u16, u16) {
     (cols, sgr::row_count(cells))
 }
 
-fn bench_frame<F: Filter>(c: &mut Criterion, name: &str, mode: Mode, shader: impl Fn(u16) -> F) {
+fn bench_frame(c: &mut Criterion, name: &str, mode: Mode) {
     // "shout.sh" in `block` is 70 columns by 6 glyph rows (420 cells), below
     // 2 rows of top padding: a banner close to a full terminal width.
     let cells = render_cells(&cfg("shout.sh", "block", mode)).unwrap();
     let (cols, rows) = size(&cells);
-    let filter = shader(rows);
+    // The shader the Worker builds, so the per-cell enum match is timed too.
+    let filter = Shader::for_mode(mode, rows);
     let mut g = c.benchmark_group("emit_shaded");
     g.throughput(Throughput::Elements(cells.len() as u64));
     g.bench_function(format!("{name}/{cols}x{rows}"), |b| {
@@ -83,9 +84,9 @@ fn bench_frame<F: Filter>(c: &mut Criterion, name: &str, mode: Mode, shader: imp
 }
 
 fn bench_emit_shaded(c: &mut Criterion) {
-    bench_frame(c, "identity", Mode::Solid, |_| Identity);
-    bench_frame(c, "rainbow", Mode::Rainbow, |_| Rainbow);
-    bench_frame(c, "fire", Mode::Fire, |rows| Fire { rows });
+    bench_frame(c, "identity", Mode::Solid);
+    bench_frame(c, "rainbow", Mode::Rainbow);
+    bench_frame(c, "fire", Mode::Fire);
 }
 
 criterion_group!(benches, bench_render_cells, bench_emit_shaded);

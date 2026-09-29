@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn emit_shaded_fits_capacity() {
-        use crate::shader::{Fire, Identity};
+        use crate::shader::{Identity, Shader};
         for mode in [Mode::Solid, Mode::Rainbow, Mode::Fire] {
             let cells = render_cells(&RenderConfig {
                 mode: Some(mode),
@@ -573,11 +573,7 @@ mod tests {
             })
             .unwrap();
             let rows = sgr::row_count(&cells);
-            match mode {
-                Mode::Solid => check_capacity(&cells, &Identity),
-                Mode::Rainbow => check_capacity(&cells, &Rainbow),
-                Mode::Fire => check_capacity(&cells, &Fire { rows }),
-            }
+            check_capacity(&cells, &Shader::for_mode(mode, rows));
         }
         // Worst case: every cell opens a new three-digit colour and is a
         // 4-byte char.

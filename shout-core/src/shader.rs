@@ -8,6 +8,7 @@
 
 //! Per-frame color filters for the streaming animation pipeline.
 
+use crate::parser::Mode;
 use crate::sgr::{Cell, Rgb};
 
 pub trait Filter {
@@ -113,6 +114,35 @@ impl Filter for Fire {
         let r = (r as f32 + flick).clamp(0.0, 255.0) as u8;
         let g = (g as f32 + flick * 0.4).clamp(0.0, 255.0) as u8;
         Some((r, g, b))
+    }
+}
+
+/// Static dispatch over the three concrete filters so the per-cell
+/// `shade` call in the hot path stays devirtualized.
+pub enum Shader {
+    Rainbow,
+    Fire(Fire),
+    Identity,
+}
+
+impl Shader {
+    /// The shader a banner of `rows` rows animates with under `mode`.
+    pub fn for_mode(mode: Mode, rows: u16) -> Self {
+        match mode {
+            Mode::Rainbow => Self::Rainbow,
+            Mode::Fire => Self::Fire(Fire { rows }),
+            Mode::Solid => Self::Identity,
+        }
+    }
+}
+
+impl Filter for Shader {
+    fn shade(&self, cell: &Cell, frame: u64) -> Option<Rgb> {
+        match self {
+            Self::Rainbow => Rainbow.shade(cell, frame),
+            Self::Fire(f) => f.shade(cell, frame),
+            Self::Identity => Identity.shade(cell, frame),
+        }
     }
 }
 

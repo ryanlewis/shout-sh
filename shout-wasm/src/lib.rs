@@ -19,7 +19,7 @@ use shout_core::parser::{
 };
 use shout_core::render::{render_cells, render_config as render_ansi};
 use shout_core::sgr::{self, Cell};
-use shout_core::shader::{Filter, Fire, Identity, Rainbow};
+use shout_core::shader::{Filter, Identity, Shader};
 use wasm_bindgen::prelude::*;
 
 /// JSON shape accepted over the wasm boundary. Fields mirror the server-side
@@ -116,15 +116,8 @@ pub fn render_frame_html(cfg_json: &str, frame: u32) -> Result<String, JsError> 
 
 fn render_frame(cells: &[Cell], mode: Mode, frame: u64) -> String {
     let mut out = String::with_capacity(cells.len() * 16);
-    match mode {
-        Mode::Rainbow => emit_html_body(cells, |c| Rainbow.shade(c, frame), &mut out),
-        Mode::Fire => {
-            let rows = sgr::row_count(cells);
-            let fire = Fire { rows };
-            emit_html_body(cells, |c| fire.shade(c, frame), &mut out);
-        }
-        Mode::Solid => emit_html_body(cells, |c| Identity.shade(c, frame), &mut out),
-    }
+    let shader = Shader::for_mode(mode, sgr::row_count(cells));
+    emit_html_body(cells, |c| shader.shade(c, frame), &mut out);
     out
 }
 
