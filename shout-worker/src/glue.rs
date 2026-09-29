@@ -53,7 +53,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let client_ip = headers.get("cf-connecting-ip")?;
     let reply = match app::rate_limit(&areq) {
         Some((limit, route)) if !allowed(&env, limit, client_ip.as_deref()).await => {
-            app::too_many_requests(route)
+            app::too_many_requests(limit, route)
         }
         _ => app::handle(&areq),
     };

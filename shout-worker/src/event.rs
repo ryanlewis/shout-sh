@@ -22,7 +22,8 @@
 //! | blob3   | font name from the built-in list, or empty           |
 //! | blob4   | mode: `default`, `solid`, `rainbow`, `fire` or empty |
 //! | blob5   | preset name from the built-in list, or empty         |
-//! | blob6   | render error kind (see `error_label`), or empty      |
+//! | blob6   | why the request failed: render error kind or         |
+//! |         | rate-limit reason (`Limit::reason`), or empty        |
 //! | double1 | HTTP status                                          |
 //! | double2 | duration in ms (see note below)                      |
 //! | double3 | frames sent (streams only, else 0)                   |
