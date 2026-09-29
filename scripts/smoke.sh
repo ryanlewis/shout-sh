@@ -167,6 +167,9 @@ check "slot freed when a stream ends" "$freed" "200"
 # minute in $CONFIG). This runs last because it uses the limit up.
 # The open-stream cap refuses a few of the burst as well; the checks
 # after the burst only pass because the burst uses up STREAM_LIMIT.
+# miniflare's windows are fixed minutes, so start before second 50.
+early_in_minute() { (($(date +%-S) < 50)); }
+wait_until 110 early_in_minute || true
 pids=()
 for _ in $(seq 1 12); do
 	curl -s -o /dev/null -w '%{http_code} %header{retry-after}\n' "$BASE/fire/boom?timeout=1" >>"$TMP/codes" &
