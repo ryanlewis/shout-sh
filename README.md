@@ -199,6 +199,7 @@ $ just test         # cargo test --all
 $ just lint         # fmt check + clippy -D warnings (host and wasm32)
 $ just smoke        # assets, streaming and HEAD through wrangler dev
 $ just parity       # diff https://shout.sh against a running `just dev`
+$ just bench-compare <checkout> <out>  # render time, wasm size, worker cpu
 $ just ci           # web-build + lint + test + worker build
 ```
 
