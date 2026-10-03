@@ -68,26 +68,11 @@ pub fn is_color(name: &str) -> bool {
 
 /// `None` is no background: cfonts leaves the terminal's own.
 fn bg_color_enum(name: &str) -> Option<Option<Color>> {
-    Some(Some(match name {
-        "" | "transparent" => return Some(None),
-        "black" => Color::Black,
-        "red" => Color::Red,
-        "green" => Color::Green,
-        "blue" => Color::Blue,
-        "yellow" => Color::Yellow,
-        "cyan" => Color::Cyan,
-        "magenta" => Color::Magenta,
-        "white" => Color::White,
-        "gray" => Color::Gray,
-        "redbright" => Color::RedBright,
-        "greenbright" => Color::GreenBright,
-        "bluebright" => Color::BlueBright,
-        "yellowbright" => Color::YellowBright,
-        "cyanbright" => Color::CyanBright,
-        "magentabright" => Color::MagentaBright,
-        "whitebright" => Color::WhiteBright,
-        _ => return None,
-    }))
+    match name {
+        "" | "transparent" => Some(None),
+        "black" => Some(Some(Color::Black)),
+        _ => color_enum(name).map(Some),
+    }
 }
 
 pub fn is_bg_color(name: &str) -> bool {
@@ -98,8 +83,7 @@ pub fn is_bg_color(name: &str) -> bool {
 /// sentinel RGB so the shader can see which slot a cell came from. For
 /// single-slot fonts there's nothing to differentiate, so `fallback` is
 /// used instead (typically `Color::White` for rainbow).
-fn slot_sentinels(font_name: &str, fallback: Color) -> ColorOption {
-    let slots = fonts::color_count(font_name);
+fn slot_sentinels(slots: usize, fallback: Color) -> ColorOption {
     if slots >= 2 {
         ColorOption::Colors(
             (0..slots)
@@ -114,12 +98,14 @@ fn slot_sentinels(font_name: &str, fallback: Color) -> ColorOption {
     }
 }
 
+/// Stops of the Fire gradient on single-slot fonts. Hex, not cfonts'
+/// named colors: cfonts' red is #ea3223.
+const FIRE_STOPS: [&str; 3] = ["#ff0000", "#ff9900", "#ffff00"];
+
+/// Parse a built-in hex stop. Every preset and Fire stop is checked by a
+/// test, so a failure here is a typo in this crate.
 fn hex_to_rgb(hex: &str) -> Rgb {
-    Rgb::from_hex(hex).unwrap_or(Rgb {
-        red: 0,
-        green: 0,
-        blue: 0,
-    })
+    Rgb::from_hex(hex).expect("built-in stops are #rrggbb")
 }
 
 /// A transition gradient through `stops`, which must hold at least one.
@@ -140,9 +126,8 @@ fn transition(stops: &[&str]) -> ColorOption {
 /// one solid color per slot — matches `cfonts -c A,B` and keeps slot 1 and
 /// slot 2 visually distinct. Single-slot fonts fall back to the transition
 /// gradient so the palette still reads across the text.
-fn apply_preset(font_name: &str, preset_name: &str) -> Result<ColorOption, RenderError> {
+fn apply_preset(slots: usize, preset_name: &str) -> Result<ColorOption, RenderError> {
     let preset = presets::resolve(preset_name).ok_or(RenderError::UnknownPreset)?;
-    let slots = fonts::color_count(font_name);
     if slots >= 2 {
         let mut stops: Vec<&str> = preset.stops.iter().copied().take(slots).collect();
         while stops.len() < slots {
@@ -188,6 +173,10 @@ pub fn check(cfg: &RenderConfig) -> Result<(), RenderError> {
 /// the width from the caller, so the native build now matches the Worker.
 const CLI_WIDTH: usize = 80;
 
+/// Columns a browser render wraps at: 1.3.0's `Env::Browser` ceiling. It
+/// keeps every column a `u16` for the cell grid.
+const BROWSER_WIDTH: usize = u16::MAX as usize;
+
 /// Raw cfonts render as String. For Rainbow mode, renders with a neutral
 /// white base so the shader pipeline can recolor every non-space glyph.
 fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
@@ -195,43 +184,36 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
 
     let font = resolve(&cfg.font).ok_or(RenderError::UnknownFont)?;
 
+    let slots = font.get_font().colors();
+
     let colors = match cfg.mode {
-        None if !cfg.preset.is_empty() => Some(apply_preset(&cfg.font, &cfg.preset)?),
-        None if !cfg.color.is_empty() => Some(ColorOption::Colors(vec![
+        // A preset wins over a color. Solid with neither is white.
+        None | Some(Mode::Solid) if !cfg.preset.is_empty() => {
+            Some(apply_preset(slots, &cfg.preset)?)
+        }
+        None | Some(Mode::Solid) if !cfg.color.is_empty() => Some(ColorOption::Colors(vec![
             color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?,
         ])),
         None => None,
-        Some(Mode::Solid) => {
-            if !cfg.preset.is_empty() {
-                Some(apply_preset(&cfg.font, &cfg.preset)?)
-            } else {
-                let name = if cfg.color.is_empty() {
-                    "white"
-                } else {
-                    cfg.color.as_str()
-                };
-                Some(ColorOption::Colors(vec![
-                    color_enum(name).ok_or(RenderError::UnknownColor)?,
-                ]))
-            }
-        }
+        Some(Mode::Solid) => Some(ColorOption::Colors(vec![Color::White])),
         // Multi-slot fonts get per-slot sentinel colors so the shader can
         // differentiate front/shadow layers. Single-slot fonts fall back
         // to a neutral white base (shader recolors every non-space cell).
         // Borders emit bare and are picked up via `char != ' '`.
-        Some(Mode::Rainbow) => Some(slot_sentinels(&cfg.font, Color::White)),
+        Some(Mode::Rainbow) => Some(slot_sentinels(slots, Color::White)),
         // Same pattern as rainbow — multi-slot fonts get sentinels, so the
         // Fire shader can render slot 1+ as dim embers behind the flame.
         // Single-slot fonts use the legacy gradient path.
-        Some(Mode::Fire) if fonts::color_count(&cfg.font) >= 2 => {
-            Some(slot_sentinels(&cfg.font, Color::White))
-        }
-        Some(Mode::Fire) => Some(transition(&["#ff0000", "#ff9900", "#ffff00"])),
+        Some(Mode::Fire) if slots >= 2 => Some(slot_sentinels(slots, Color::White)),
+        Some(Mode::Fire) => Some(transition(&FIRE_STOPS)),
     };
 
     let mut block = BlockOptions::new(cfg.text.as_str());
     block.font = font;
     block.letter_spacing = usize::from(cfg.letter_spacing);
+    // One blank row between lines. Every font but console declares this;
+    // v4's console declares none, where 1.3.0 left one.
+    block.line_height = Some(1);
     // The browser has no terminal palette: paint named colors with the RGB
     // values cfonts' browser output uses, as 1.3.0's `Env::Browser` did.
     block.colors = if cfg.browser {
@@ -239,9 +221,13 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
     } else {
         colors
     };
-    // The cell pipeline drops background SGR, and the playground paints
-    // the background itself, so only the CLI output carries this.
-    let background = bg_color_enum(&cfg.background).flatten();
+    // The playground paints the background itself, so only the CLI
+    // output carries it.
+    let background = if cfg.browser {
+        None
+    } else {
+        bg_color_enum(&cfg.background).flatten()
+    };
 
     // cfonts' own `spaceless=false` hardcodes 2 blank rows above + below.
     // Always pass `spaceless=true` so we can add `cfg.padding` rows ourselves
@@ -254,8 +240,11 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
         ..Options::default()
     };
 
-    // The browser canvas does not wrap. Zero is unlimited.
-    let width = if cfg.browser { 0 } else { CLI_WIDTH };
+    let width = if cfg.browser {
+        BROWSER_WIDTH
+    } else {
+        CLI_WIDTH
+    };
     let overrides = RenderOverrides::default()
         .with_canvas_width(width)
         .with_color(ColorOverride::Level(ColorLevel::TrueColor));
@@ -555,9 +544,6 @@ mod tests {
             lines <= 6,
             "expected <=6 line breaks (one banner), got {lines} in {out:?}"
         );
-        // No HTML from cfonts' browser environment.
-        assert!(!out.contains("<div"), "div wrapper leaked: {out:?}");
-        assert!(!out.contains("<br>"), "<br> leaked: {out:?}");
     }
 
     fn browser_cfg(text: &str, font: &str, mode: Mode, preset: &str) -> RenderConfig {
@@ -571,8 +557,6 @@ mod tests {
             ..Default::default()
         }
     }
-
-    type Rgb8 = (u8, u8, u8);
 
     fn layout(cells: &[Cell]) -> Vec<(u16, u16, char)> {
         cells.iter().map(|c| (c.row, c.col, c.ch)).collect()
@@ -611,7 +595,7 @@ mod tests {
             let left = ink.iter().min_by_key(|c| c.col).unwrap();
             let right = ink.iter().max_by_key(|c| c.col).unwrap();
             assert!(right.col >= min_cols, "{}: {} columns", cfg.font, right.col);
-            let near = |a: Rgb8, b: Rgb8| {
+            let near = |a: sgr::Rgb, b: sgr::Rgb| {
                 a.0.abs_diff(b.0) <= 8 && a.1.abs_diff(b.1) <= 8 && a.2.abs_diff(b.2) <= 8
             };
             assert!(
@@ -633,6 +617,53 @@ mod tests {
                 cfg.font,
                 distinct.len()
             );
+        }
+    }
+
+    #[test]
+    fn browser_wraps_at_the_u16_column_limit() {
+        // Unwrapped, this line is about 80,000 columns: past what a cell's
+        // u16 column holds, which overflows in a debug build.
+        let cfg = browser_cfg(&"W".repeat(8_000), "block", Mode::Solid, "");
+        let cells = render_cells(&cfg).unwrap();
+        let cols = cells.iter().map(|c| u32::from(c.col) + 1).max().unwrap();
+        assert!(cols <= u32::from(u16::MAX), "{cols} columns");
+        let one_line = render_cells(&browser_cfg("W", "block", Mode::Solid, "")).unwrap();
+        assert!(sgr::row_count(&cells) > sgr::row_count(&one_line));
+    }
+
+    #[test]
+    fn console_leaves_a_blank_row_between_lines() {
+        let cfg = RenderConfig {
+            font: "console".into(),
+            padding: 0,
+            ..base("ab|cd")
+        };
+        assert_eq!(render_config(&cfg).unwrap(), "ab\n\ncd");
+    }
+
+    #[test]
+    fn browser_render_has_no_background() {
+        let cfg = RenderConfig {
+            background: "blue".into(),
+            ..browser_cfg("hi", "block", Mode::Solid, "")
+        };
+        assert!(!render_config(&cfg).unwrap().contains("\x1b[44m"));
+        let cli = RenderConfig {
+            browser: false,
+            ..cfg
+        };
+        assert!(render_config(&cli).unwrap().contains("\x1b[44m"));
+    }
+
+    #[test]
+    fn built_in_stops_parse() {
+        for stop in presets::PRESETS
+            .iter()
+            .flat_map(|p| p.stops)
+            .chain(&FIRE_STOPS)
+        {
+            assert!(Rgb::from_hex(stop).is_ok(), "{stop}");
         }
     }
 

@@ -123,6 +123,21 @@ fn simple3d_links_render_in_simple() {
 }
 
 #[test]
+fn events_record_the_font_an_alias_renders_in() {
+    assert_eq!(get("/simple3d/hi").event.font, "simple");
+    assert_eq!(get("/hi?font=simple-3d").event.font, "simple");
+    assert_eq!(get("/hi?font=simple-block").event.font, "simpleblock");
+    assert_eq!(get("/console/hi").event.font, "console");
+}
+
+#[test]
+fn console_lines_keep_a_blank_row_between_them() {
+    let r = get("/console/ab|cd");
+    assert_eq!(r.status, 200);
+    assert!(text(&r).contains("ab\n\ncd"), "{:?}", text(&r));
+}
+
+#[test]
 fn font_preview_renders() {
     let r = get("/fonts/block");
     assert_eq!(r.status, 200);
