@@ -60,13 +60,6 @@ pub fn list_newline() -> String {
     FONTS.join("\n")
 }
 
-/// How many color slots the font has. Drives preset-gradient truncation so
-/// a two-stop palette doesn't over-color a single-color font (and a
-/// three-stop preset doesn't under-color chrome).
-pub fn color_count(name: &str) -> usize {
-    resolve(name).map_or(1, |font| font.get_font().colors())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,17 +87,5 @@ mod tests {
     fn unknown_is_none() {
         assert!(resolve("standard").is_none());
         assert!(resolve("").is_none());
-    }
-
-    #[test]
-    fn color_count_matches_cfonts() {
-        assert_eq!(color_count("chrome"), 3);
-        assert_eq!(color_count("block"), 2);
-        assert_eq!(color_count("3d"), 2);
-        assert_eq!(color_count("tiny"), 1);
-        assert_eq!(color_count("simple"), 1);
-        assert_eq!(color_count("simpleblock"), 1);
-        assert_eq!(color_count("huge"), 2);
-        assert_eq!(color_count("console"), 1);
     }
 }

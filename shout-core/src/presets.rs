@@ -8,8 +8,8 @@
 
 //! Named color palettes. Each preset is an ordered list of 1–3 hex stops
 //! consumed by cfonts' gradient path. At render time the renderer takes
-//! `stops[..font.color_count]` — extra stops are silently dropped so every
-//! preset reads as "close enough" on every font.
+//! one stop per color slot of the font — extra stops are silently dropped
+//! so every preset reads as "close enough" on every font.
 
 pub struct Preset {
     pub name: &'static str,
