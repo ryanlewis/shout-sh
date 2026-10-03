@@ -177,7 +177,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: ./node_modules/.bin/wrangler deploy
+        # The empty env is the top level of wrangler.toml: production.
+        # Naming it stops wrangler warning that other envs exist.
+        run: ./node_modules/.bin/wrangler deploy --env ""
 
       - name: note skipped deploy
         if: env.HAS_CLOUDFLARE_TOKEN != 'true'

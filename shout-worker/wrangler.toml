@@ -94,3 +94,35 @@ new_sqlite_classes = ["StreamSlots"]
 # Typical streams use well under 1s. Needs the Workers Paid plan.
 [limits]
 cpu_ms = 120000
+
+# Preview of the cfonts v4 port on cfontsv4.shout.sh. Deployed by hand
+# with `just deploy-cfontsv4`, never by CI. It is a separate Worker,
+# shout-sh-proxy-cfontsv4, so it cannot replace or roll back production.
+#
+# An env inherits main, compatibility_date and flags, workers_dev,
+# [assets], [[migrations]], [limits] and routes from the top level, but
+# not bindings. The v1 migration creates StreamSlots in this Worker too.
+# routes is set here so the preview never claims shout.sh. Everything
+# else that is not inherited is declared again: its own analytics
+# dataset and rate-limit namespaces, so it does not touch production
+# data or counters, with the same limits. The bindings are inline
+# tables because scripts/smoke.sh reads the top-level [[ratelimits]].
+#
+# DNS: cfontsv4.shout.sh is a proxied AAAA 100:: record (no origin),
+# made by hand. SLOT_KEY_SECRET is not set on this Worker, so the
+# open-stream cap is off until someone runs
+# `wrangler secret put SLOT_KEY_SECRET --env cfontsv4`.
+[env.cfontsv4]
+routes = [
+  { pattern = "cfontsv4.shout.sh/*", zone_name = "shout.sh" },
+]
+analytics_engine_datasets = [
+  { binding = "SHOUT_EVENTS", dataset = "shout_events_cfontsv4" },
+]
+ratelimits = [
+  { name = "RATE_LIMIT", namespace_id = "7101", simple = { limit = 30, period = 60 } },
+  { name = "STREAM_LIMIT", namespace_id = "7102", simple = { limit = 5, period = 60 } },
+]
+durable_objects = { bindings = [
+  { name = "STREAM_SLOTS", class_name = "StreamSlots" },
+] }
