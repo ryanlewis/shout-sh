@@ -77,6 +77,14 @@ deploy-cfontsv4: web-build worker-install worker-build
 smoke:
     scripts/smoke.sh
 
+# Measure a checkout: render benches, wasm sizes and Worker CPU per
+# request, written to <out>/results.json and results.md. Run it on two
+# checkouts to compare them. Paths are relative to where just runs.
+# See scripts/bench-compare.sh.
+[doc("Measure a checkout: render time, wasm size, Worker CPU.")]
+bench-compare checkout out:
+    cd "{{invocation_directory()}}" && "{{justfile_directory()}}/scripts/bench-compare.sh" "{{checkout}}" "{{out}}"
+
 # Diff the live site against a running `just dev`, path by path.
 parity:
     scripts/parity.sh
