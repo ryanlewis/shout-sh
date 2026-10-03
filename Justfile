@@ -66,6 +66,12 @@ dev: wasm-build worker-install worker-build
     while [ ! -f web/dist/index.html ]; do sleep 0.1; done
     cd shout-worker && ./node_modules/.bin/wrangler dev
 
+# Deploy the cfonts v4 preview to cfontsv4.shout.sh, from your own
+# Cloudflare login. By hand only: CI deploys production and never this.
+[doc("Deploy the cfonts v4 preview to cfontsv4.shout.sh (by hand, not CI).")]
+deploy-cfontsv4: web-build worker-install worker-build
+    cd shout-worker && ./node_modules/.bin/wrangler deploy --env cfontsv4
+
 # Check assets, streaming and HEAD through `wrangler dev`. Needs web-build,
 # worker-install and worker-build first (`just ci` does all three).
 smoke:
