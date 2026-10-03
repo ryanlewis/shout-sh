@@ -14,8 +14,8 @@
 // the glue fails open without them. What is left is routing, rendering
 // and the wasm-bindgen glue.
 
+import { execFileSync } from "node:child_process";
 import { register } from "node:module";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,6 +25,10 @@ if (!buildDir) {
 	process.exit(2);
 }
 const SAMPLES = Number(samplesArg ?? 15);
+if (!Number.isInteger(SAMPLES) || SAMPLES < 1) {
+	console.error(`samples must be a whole number of at least 1, not ${samplesArg}`);
+	process.exit(2);
+}
 
 // worker-build's index.js imports `cloudflare:workers` and the wasm file
 // as a module. Node has neither, so serve both from a loader hook.
@@ -61,20 +65,6 @@ const cpuMs = (start) => {
 	return (d.user + d.system) / 1000;
 };
 
-// Startup: compile and instantiate the wasm, which index.js does at import.
-// Measured on its own, since a Worker pays it once per isolate.
-const startup = [];
-for (let i = 0; i < SAMPLES; i++) {
-	const bytes = readFileSync(wasmPath);
-	const t = process.cpuUsage();
-	const w = performance.now();
-	await WebAssembly.compile(bytes);
-	startup.push({ cpu: cpuMs(t), wall: performance.now() - w });
-}
-
-const mod = await import(pathToFileURL(resolve(buildDir, "index.js")).href);
-const ctx = { waitUntil() {}, passThroughOnException() {} };
-const worker = new mod.default(ctx, {});
 
 const CURL = { "user-agent": "curl/8.7.1", accept: "*/*" };
 const BROWSER = {
@@ -128,6 +118,35 @@ const stats = (xs) => {
 };
 const round = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, k === "n" ? v : Number(v.toFixed(4))]));
 
+// Startup: compile the wasm, which index.js does at import. A Worker pays
+// it once per isolate. Each sample is a fresh Node process, so V8's module
+// cache cannot answer it. By default V8 compiles wasm lazily: compile()
+// only decodes and validates, and functions compile on first call. With
+// --no-wasm-lazy-compilation it compiles every function up front, on
+// several threads, so CPU time is well above wall time.
+const COMPILE = `import { readFileSync } from "node:fs";
+const bytes = readFileSync(process.argv[1]);
+const t = process.cpuUsage(), w = performance.now();
+await WebAssembly.compile(bytes);
+const d = process.cpuUsage(t);
+console.log(JSON.stringify({ cpu: (d.user + d.system) / 1000, wall: performance.now() - w }));`;
+const compile = (flags) => {
+	const runs = [];
+	for (let i = 0; i < SAMPLES; i++) {
+		const out = execFileSync(process.execPath, [...flags, "--input-type=module", "-e", COMPILE, wasmPath]);
+		runs.push(JSON.parse(out));
+	}
+	return { cpu: round(stats(runs.map((r) => r.cpu))), wall: round(stats(runs.map((r) => r.wall))) };
+};
+const startup = {
+	decode_validate_ms: compile([]),
+	full_compile_ms: compile(["--no-wasm-lazy-compilation"]),
+};
+
+const mod = await import(pathToFileURL(resolve(buildDir, "index.js")).href);
+const ctx = { waitUntil() {}, passThroughOnException() {} };
+const worker = new mod.default(ctx, {});
+
 const requests = [];
 for (const [name, path, headers, frames] of CASES) {
 	const bytes = await run(path, headers, frames);
@@ -155,7 +174,7 @@ console.log(
 			node: process.version,
 			v8: process.versions.v8,
 			samples: SAMPLES,
-			startup_compile_ms: { cpu: round(stats(startup.map((s) => s.cpu))), wall: round(stats(startup.map((s) => s.wall))) },
+			startup,
 			requests,
 		},
 		null,

@@ -86,7 +86,7 @@ jq -n \
 	--arg arch "$(uname -m)" \
 	--arg os "$(uname -sr)" \
 	--arg cpu "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')" \
-	--arg rustc "$(rustc -V)" \
+	--arg rustc "$(cd "$checkout" && rustc -V)" \
 	--arg commit "$(git -C "$checkout" rev-parse --short HEAD)" \
 	--arg branch "$(git -C "$checkout" rev-parse --abbrev-ref HEAD)" \
 	--arg dirty "$(git -C "$checkout" status --porcelain --untracked-files=no | wc -l | tr -d ' ')" \
@@ -124,7 +124,8 @@ jq -r '
 	"",
 	"| request | median | min | max | batch | bytes |",
 	"|---|---:|---:|---:|---:|---:|",
-	(.worker.startup_compile_ms.cpu | "| wasm compile (startup) | \(.median | ms) | \(.min | ms) | \(.max | ms) | 1 | |"),
+	(.worker.startup.decode_validate_ms.cpu | "| wasm decode and validate (startup, lazy compile) | \(.median | ms) | \(.min | ms) | \(.max | ms) | 1 | |"),
+	(.worker.startup.full_compile_ms.cpu | "| wasm full compile (startup, all threads) | \(.median | ms) | \(.min | ms) | \(.max | ms) | 1 | |"),
 	(.worker.requests[] | "| \(.name) | \(.cpu_ms.median | ms) | \(.cpu_ms.min | ms) | \(.cpu_ms.max | ms) | \(.batch) | \(.bytes) |")
 ' "$out/results.json" >"$out/results.md"
 
