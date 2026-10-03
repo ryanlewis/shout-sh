@@ -17,6 +17,8 @@
 /shout-worker/wrangler.smoke.*.toml
 # Local secrets for wrangler dev (SLOT_KEY_SECRET).
 /shout-worker/.dev.vars
+# Cache written by the cf CLI (account id and name).
+.cloudflare/
 
 # IDE / editor
 .idea/
