@@ -13,8 +13,7 @@
 //! animated stream. `emit_html` is the same for a frame of the browser
 //! playground, so its config has `browser` on, as shout-wasm's does. The
 //! other configs match what the Worker builds for a curl request (`browser`
-//! off). cfonts then wraps at the terminal width, so run through `just
-//! bench`, which detaches the terminal to get the Worker's 80 columns.
+//! off), which wraps at 80 columns.
 
 use std::hint::black_box;
 

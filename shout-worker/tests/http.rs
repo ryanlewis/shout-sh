@@ -104,13 +104,22 @@ fn root_help_text_includes_usage() {
 }
 
 #[test]
-fn fonts_lists_thirteen() {
+fn fonts_lists_twelve() {
     let r = get("/fonts");
     assert_eq!(r.status, 200);
     let lines: Vec<_> = text(&r).lines().filter(|l| !l.is_empty()).collect();
-    assert_eq!(lines.len(), 13);
+    assert_eq!(lines.len(), 12);
     assert!(lines.contains(&"block"));
     assert!(lines.contains(&"tiny"));
+    assert!(!lines.contains(&"simple3d"));
+}
+
+#[test]
+fn simple3d_links_render_in_simple() {
+    // cfonts v4 dropped simple3d; old links keep working.
+    let old = get("/simple3d/hi");
+    assert_eq!(old.status, 200);
+    assert_eq!(text(&old), text(&get("/simple/hi")));
 }
 
 #[test]

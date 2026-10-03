@@ -94,10 +94,9 @@ pub struct RenderConfig {
     pub max_length: u16,
     pub padding: u16,
     pub background: String,
-    /// Internal: when true, render.rs drives cfonts with `Env::Browser` so
-    /// its terminal-width-based wrapping is lifted (cfonts falls back to 80
-    /// cols when there's no tty, which is always the case in wasm). Output
-    /// is normalized back to the SGR format the cell pipeline expects.
+    /// Internal: when true, render.rs lifts cfonts' 80-column wrap and
+    /// paints named colors with cfonts' browser RGB values, for the wasm
+    /// playground. Output stays in the SGR format the cell pipeline expects.
     pub browser: bool,
 }
 

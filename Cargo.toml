@@ -5,7 +5,7 @@ members = ["shout-core", "shout-wasm", "shout-worker"]
 [workspace.package]
 version = "0.1.1"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.95"
 license = "GPL-3.0-or-later"
 description = "Tiny HTTP server that renders stylized ASCII banners over curl."
 repository = "https://github.com/ryanlewis/shout-sh"
@@ -13,7 +13,9 @@ homepage = "https://shout.sh"
 readme = "README.md"
 
 [workspace.dependencies]
-cfonts = "1.3.0"
+# cfonts v4 is unreleased: pinned to the head of upstream PR #90 (branch v4).
+# Do not merge until v4 is published to crates.io.
+cfonts = { git = "https://github.com/dominikwilkowski/cfonts", rev = "facbae2412f2546682a56c1eb65d9874f35c8372" }
 
 # wasm release profile — shipped to the browser, optimize for size.
 [profile.release]

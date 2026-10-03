@@ -11,11 +11,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-use cfonts::Fonts;
+use cfonts::Font;
 
-/// Canonical lowercase font names in display order. `simpleblock` /
-/// `simple3d` are the canonical spellings; hyphenated aliases are accepted
-/// by `resolve` for user ergonomics.
+/// Canonical lowercase font names in display order. `simpleblock` is the
+/// canonical spelling; the hyphenated alias is accepted by `resolve` for
+/// user ergonomics.
 pub const FONTS: &[&str] = &[
     "block",
     "slick",
@@ -27,7 +27,6 @@ pub const FONTS: &[&str] = &[
     "simple",
     "simpleblock",
     "3d",
-    "simple3d",
     "huge",
     "console",
 ];
@@ -36,21 +35,23 @@ pub fn is_font(name: &str) -> bool {
     resolve(name).is_some()
 }
 
-pub fn resolve(name: &str) -> Option<Fonts> {
+pub fn resolve(name: &str) -> Option<Font> {
     match name {
-        "block" => Some(Fonts::FontBlock),
-        "slick" => Some(Fonts::FontSlick),
-        "tiny" => Some(Fonts::FontTiny),
-        "grid" => Some(Fonts::FontGrid),
-        "pallet" => Some(Fonts::FontPallet),
-        "shade" => Some(Fonts::FontShade),
-        "chrome" => Some(Fonts::FontChrome),
-        "simple" => Some(Fonts::FontSimple),
-        "simpleblock" | "simple-block" => Some(Fonts::FontSimpleBlock),
-        "3d" => Some(Fonts::Font3d),
-        "simple3d" | "simple-3d" => Some(Fonts::FontSimple3d),
-        "huge" => Some(Fonts::FontHuge),
-        "console" => Some(Fonts::FontConsole),
+        "block" => Some(Font::Block),
+        "slick" => Some(Font::Slick),
+        "tiny" => Some(Font::Tiny),
+        "grid" => Some(Font::Grid),
+        "pallet" => Some(Font::Pallet),
+        "shade" => Some(Font::Shade),
+        "chrome" => Some(Font::Chrome),
+        "simple" => Some(Font::Simple),
+        "simpleblock" | "simple-block" => Some(Font::SimpleBlock),
+        "3d" => Some(Font::Font3D),
+        // cfonts v4 dropped simple3d. Old links render in `simple`, the
+        // nearest font, rather than as a banner reading "SIMPLE3D/...".
+        "simple3d" | "simple-3d" => Some(Font::Simple),
+        "huge" => Some(Font::Huge),
+        "console" => Some(Font::Console),
         _ => None,
     }
 }
@@ -59,16 +60,11 @@ pub fn list_newline() -> String {
     FONTS.join("\n")
 }
 
-/// How many colors the font's JSON consumes. Drives preset-gradient
-/// truncation so a two-stop palette doesn't over-color a single-color font
-/// (and a three-stop preset doesn't under-color chrome).
+/// How many color slots the font has. Drives preset-gradient truncation so
+/// a two-stop palette doesn't over-color a single-color font (and a
+/// three-stop preset doesn't under-color chrome).
 pub fn color_count(name: &str) -> usize {
-    match name {
-        "chrome" => 3,
-        "block" | "slick" | "grid" | "pallet" | "shade" | "huge" | "3d" => 2,
-        // simple, simpleblock, simple3d, tiny, console
-        _ => 1,
-    }
+    resolve(name).map_or(1, |font| font.get_font().colors())
 }
 
 #[cfg(test)]
@@ -85,7 +81,13 @@ mod tests {
     #[test]
     fn hyphenated_aliases() {
         assert!(resolve("simple-block").is_some());
-        assert!(resolve("simple-3d").is_some());
+    }
+
+    #[test]
+    fn simple3d_falls_back_to_simple() {
+        assert!(!FONTS.contains(&"simple3d"));
+        assert_eq!(resolve("simple3d"), Some(Font::Simple));
+        assert_eq!(resolve("simple-3d"), Some(Font::Simple));
     }
 
     #[test]
@@ -95,14 +97,14 @@ mod tests {
     }
 
     #[test]
-    fn color_count_matches_cfonts_json() {
-        // Values sourced from cfonts' bundled font JSONs at pin time.
+    fn color_count_matches_cfonts() {
         assert_eq!(color_count("chrome"), 3);
         assert_eq!(color_count("block"), 2);
         assert_eq!(color_count("3d"), 2);
         assert_eq!(color_count("tiny"), 1);
         assert_eq!(color_count("simple"), 1);
-        assert_eq!(color_count("simple3d"), 1);
+        assert_eq!(color_count("simpleblock"), 1);
+        assert_eq!(color_count("huge"), 2);
         assert_eq!(color_count("console"), 1);
     }
 }
