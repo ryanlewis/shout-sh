@@ -115,12 +115,16 @@ impl Event {
 }
 
 /// `cfg.font` can come from `?font=`, which the parser does not validate,
-/// so map it onto the built-in list instead of copying it.
+/// so map it onto the built-in list instead of copying it. An alias
+/// (`simple3d`, `simple-block`) records the font it renders in.
 fn font_label(font: &str) -> &'static str {
+    let Some(resolved) = fonts::resolve(font) else {
+        return "";
+    };
     fonts::FONTS
         .iter()
         .copied()
-        .find(|f| *f == font)
+        .find(|f| fonts::resolve(f) == Some(resolved))
         .unwrap_or("")
 }
 

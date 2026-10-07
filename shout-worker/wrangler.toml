@@ -45,7 +45,7 @@ dataset = "shout_events"
 # namespace_id only has to be unique within the Cloudflare account.
 #
 # General: 30 requests a minute. A person trying fonts by hand sends a
-# few a minute. A shell loop over the 13 fonts is 13 requests, so it
+# few a minute. A shell loop over the 12 fonts is 12 requests, so it
 # fits. Loading the playground page costs 1: it renders in the browser,
 # and /_app/* is exempt. The counts are per Cloudflare location, so a
 # client can sometimes get a little more than 30.

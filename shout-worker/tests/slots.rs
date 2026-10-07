@@ -285,7 +285,7 @@ fn only_animated_streams_take_a_slot() {
 
 /// The slot is checked before anything renders, so its lease comes from
 /// the timeout the request asked for. Rendering frame 0 caps this banner
-/// to 46s; the plan still says 300s, which shows it rendered nothing.
+/// to 55s; the plan still says 300s, which shows it rendered nothing.
 #[test]
 fn slot_lease_uses_the_requested_timeout() {
     let uri = format!(
@@ -305,7 +305,7 @@ fn slot_lease_uses_the_requested_timeout() {
     let Body::Stream(anim) = p.reply().body else {
         panic!("expected a stream")
     };
-    assert_eq!(anim.timeout_ms(), 46_000);
+    assert_eq!(anim.timeout_ms(), 55_000);
     assert!(lease_ms(anim.timeout_ms()) < lease_ms(p.stream_timeout_ms().unwrap()));
     assert_eq!(
         plan(&Request {

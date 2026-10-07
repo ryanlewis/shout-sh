@@ -13,8 +13,7 @@
 //! animated stream. `emit_html` is the same for a frame of the browser
 //! playground, so its config has `browser` on, as shout-wasm's does. The
 //! other configs match what the Worker builds for a curl request (`browser`
-//! off). cfonts then wraps at the terminal width, so run through `just
-//! bench`, which detaches the terminal to get the Worker's 80 columns.
+//! off), which wraps at 80 columns.
 
 use std::hint::black_box;
 
@@ -67,7 +66,7 @@ fn size(cells: &[Cell]) -> (u16, u16) {
 }
 
 fn bench_frame(c: &mut Criterion, name: &str, mode: Mode) {
-    // "shout.sh" in `block` is 70 columns by 6 glyph rows (420 cells), below
+    // "shout.sh" in `block` is 69 columns by 6 glyph rows (414 cells), below
     // 2 rows of top padding: a banner close to a full terminal width.
     let cells = render_cells(&cfg("shout.sh", "block", mode)).unwrap();
     let (cols, rows) = size(&cells);
