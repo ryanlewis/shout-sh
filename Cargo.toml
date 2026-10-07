@@ -15,7 +15,7 @@ readme = "README.md"
 [workspace.dependencies]
 # cfonts v4 is unreleased: pinned to the head of upstream PR #90 (branch v4).
 # Do not merge until v4 is published to crates.io.
-cfonts = { git = "https://github.com/dominikwilkowski/cfonts", rev = "facbae2412f2546682a56c1eb65d9874f35c8372" }
+cfonts = { git = "https://github.com/dominikwilkowski/cfonts", rev = "bec40fa3428d9576bb3fe1ef07e885e8d6d26f9b" }
 
 # wasm release profile — shipped to the browser, optimize for size.
 [profile.release]

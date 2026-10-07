@@ -95,7 +95,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "cfonts"
 version = "4.0.0"
-source = "git+https://github.com/dominikwilkowski/cfonts?rev=facbae2412f2546682a56c1eb65d9874f35c8372#facbae2412f2546682a56c1eb65d9874f35c8372"
+source = "git+https://github.com/dominikwilkowski/cfonts?rev=bec40fa3428d9576bb3fe1ef07e885e8d6d26f9b#bec40fa3428d9576bb3fe1ef07e885e8d6d26f9b"
 dependencies = [
  "cfonts-macros",
  "libc",
@@ -106,7 +106,7 @@ dependencies = [
 [[package]]
 name = "cfonts-macros"
 version = "4.0.0"
-source = "git+https://github.com/dominikwilkowski/cfonts?rev=facbae2412f2546682a56c1eb65d9874f35c8372#facbae2412f2546682a56c1eb65d9874f35c8372"
+source = "git+https://github.com/dominikwilkowski/cfonts?rev=bec40fa3428d9576bb3fe1ef07e885e8d6d26f9b#bec40fa3428d9576bb3fe1ef07e885e8d6d26f9b"
 
 [[package]]
 name = "chrono"

@@ -9,8 +9,9 @@
 use std::num::NonZeroUsize;
 
 use cfonts::{
-    BackgroundOption, BlockOptions, CliEnv, Color, ColorLevel, ColorOption, ColorOverride,
-    GradientOption, GradientStop, Options, RenderOverrides, Rgb, TransitionStops, render_with,
+    Background, BackgroundOption, BlockOptions, CliEnv, Color, ColorLevel, ColorOption,
+    ColorOverride, Gradient, GradientOption, Kind, Options, RenderOverrides, Rgb, Text,
+    TransitionStops, render_with,
 };
 
 use crate::fonts::{self, resolve};
@@ -41,36 +42,36 @@ impl RenderError {
     }
 }
 
-fn color_enum(name: &str) -> Option<Color> {
+fn color_enum<K: Kind>(name: &str) -> Option<Color<K>> {
     Some(match name {
-        "red" => Color::Red,
-        "green" => Color::Green,
-        "blue" => Color::Blue,
-        "yellow" => Color::Yellow,
-        "cyan" => Color::Cyan,
-        "magenta" => Color::Magenta,
-        "white" => Color::White,
-        "gray" => Color::Gray,
-        "redbright" => Color::RedBright,
-        "greenbright" => Color::GreenBright,
-        "bluebright" => Color::BlueBright,
-        "yellowbright" => Color::YellowBright,
-        "cyanbright" => Color::CyanBright,
-        "magentabright" => Color::MagentaBright,
-        "whitebright" => Color::WhiteBright,
+        "red" => Color::RED,
+        "green" => Color::GREEN,
+        "blue" => Color::BLUE,
+        "yellow" => Color::YELLOW,
+        "cyan" => Color::CYAN,
+        "magenta" => Color::MAGENTA,
+        "white" => Color::WHITE,
+        "gray" => Color::GRAY,
+        "redbright" => Color::RED_BRIGHT,
+        "greenbright" => Color::GREEN_BRIGHT,
+        "bluebright" => Color::BLUE_BRIGHT,
+        "yellowbright" => Color::YELLOW_BRIGHT,
+        "cyanbright" => Color::CYAN_BRIGHT,
+        "magentabright" => Color::MAGENTA_BRIGHT,
+        "whitebright" => Color::WHITE_BRIGHT,
         _ => return None,
     })
 }
 
 pub fn is_color(name: &str) -> bool {
-    color_enum(name).is_some()
+    color_enum::<Text>(name).is_some()
 }
 
 /// `None` is no background: cfonts leaves the terminal's own.
-fn bg_color_enum(name: &str) -> Option<Option<Color>> {
+fn bg_color_enum(name: &str) -> Option<Option<Color<Background>>> {
     match name {
         "" | "transparent" => Some(None),
-        "black" => Some(Some(Color::Black)),
+        "black" => Some(Some(Color::BLACK)),
         _ => color_enum(name).map(Some),
     }
 }
@@ -82,14 +83,14 @@ pub fn is_bg_color(name: &str) -> bool {
 /// For shader-driven modes: paint each of the font's slots with a distinct
 /// sentinel RGB so the shader can see which slot a cell came from. For
 /// single-slot fonts there's nothing to differentiate, so `fallback` is
-/// used instead (typically `Color::White` for rainbow).
+/// used instead (typically `Color::WHITE` for rainbow).
 fn slot_sentinels(slots: usize, fallback: Color) -> ColorOption {
     if slots >= 2 {
         ColorOption::Colors(
             (0..slots)
                 .map(|i| {
                     let (red, green, blue) = SLOT_SENTINELS[i.min(SLOT_SENTINELS.len() - 1)];
-                    Color::Rgb(Rgb { red, green, blue })
+                    Color::rgb(red, green, blue)
                 })
                 .collect(),
         )
@@ -111,10 +112,8 @@ fn hex_to_rgb(hex: &str) -> Rgb {
 /// A transition gradient through `stops`, which must hold at least one.
 /// A single stop is repeated, as a transition needs two.
 fn transition(stops: &[&str]) -> ColorOption {
-    let mut stops: Vec<GradientStop> = stops
-        .iter()
-        .map(|s| GradientStop::Rgb(hex_to_rgb(s)))
-        .collect();
+    let mut stops: Vec<Color<Gradient>> =
+        stops.iter().map(|s| Color::from(hex_to_rgb(s))).collect();
     if stops.len() < 2 {
         stops.push(stops[0]);
     }
@@ -136,7 +135,7 @@ fn apply_preset(slots: usize, preset_name: &str) -> Result<ColorOption, RenderEr
         Ok(ColorOption::Colors(
             stops
                 .into_iter()
-                .map(|s| Color::Rgb(hex_to_rgb(s)))
+                .map(|s| Color::from(hex_to_rgb(s)))
                 .collect(),
         ))
     } else {
@@ -160,7 +159,7 @@ pub fn check(cfg: &RenderConfig) -> Result<(), RenderError> {
             presets::resolve(&cfg.preset).ok_or(RenderError::UnknownPreset)?;
         }
         None | Some(Mode::Solid) if !cfg.color.is_empty() => {
-            color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?;
+            color_enum::<Text>(&cfg.color).ok_or(RenderError::UnknownColor)?;
         }
         // The shaders pick the colors; a color or preset is ignored.
         None | Some(Mode::Solid | Mode::Rainbow | Mode::Fire) => {}
@@ -195,16 +194,16 @@ fn render_raw(cfg: &RenderConfig) -> Result<String, RenderError> {
             color_enum(&cfg.color).ok_or(RenderError::UnknownColor)?,
         ])),
         None => None,
-        Some(Mode::Solid) => Some(ColorOption::Colors(vec![Color::White])),
+        Some(Mode::Solid) => Some(ColorOption::Colors(vec![Color::WHITE])),
         // Multi-slot fonts get per-slot sentinel colors so the shader can
         // differentiate front/shadow layers. Single-slot fonts fall back
         // to a neutral white base (shader recolors every non-space cell).
         // Borders emit bare and are picked up via `char != ' '`.
-        Some(Mode::Rainbow) => Some(slot_sentinels(slots, Color::White)),
+        Some(Mode::Rainbow) => Some(slot_sentinels(slots, Color::WHITE)),
         // Same pattern as rainbow — multi-slot fonts get sentinels, so the
         // Fire shader can render slot 1+ as dim embers behind the flame.
         // Single-slot fonts use the legacy gradient path.
-        Some(Mode::Fire) if slots >= 2 => Some(slot_sentinels(slots, Color::White)),
+        Some(Mode::Fire) if slots >= 2 => Some(slot_sentinels(slots, Color::WHITE)),
         Some(Mode::Fire) => Some(transition(&FIRE_STOPS)),
     };
 
@@ -260,7 +259,7 @@ fn flatten_named(colors: ColorOption) -> ColorOption {
         ColorOption::Colors(colors) => ColorOption::Colors(
             colors
                 .into_iter()
-                .map(|c| c.to_rgb().map_or(c, Color::Rgb))
+                .map(|c| c.to_rgb().map_or(c, Color::from))
                 .collect(),
         ),
         gradient => gradient,
