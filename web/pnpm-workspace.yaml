@@ -11,6 +11,8 @@ minimumReleaseAgeExclude:
   - pnpm@11.8.0 || 11.11.0
   # Renovate security update: vitest@4.1.11
   - vitest@4.1.11
+  # Renovate security update: happy-dom@21.0.4
+  - happy-dom@21.0.4
 
 allowBuilds:
   # esbuild works without its postinstall — the binary ships via the
