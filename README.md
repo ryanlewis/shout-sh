@@ -29,11 +29,11 @@ path is treated as text.
 
 ### fonts
 
-13 fonts, courtesy of [cfonts]:
+12 fonts, courtesy of [cfonts]:
 
 ```
 block (default), slick, tiny, grid, pallet, shade, chrome,
-simple, simpleblock, 3d, simple3d, huge, console
+simple, simpleblock, 3d, huge, console
 ```
 
 ```

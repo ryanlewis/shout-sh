@@ -16,16 +16,12 @@ fmt:
 # Render benchmarks for shout-core (criterion). Uses the bench profile, which
 # inherits the size-tuned release profile. Extra args go to criterion, for
 # example `just bench -- --save-baseline main` then `-- --baseline main`.
-# cfonts wraps at the width of whichever of stdin, stdout or stderr is a
-# terminal, and at 80 columns with none, as in the Worker. All three are
-# detached so the banners, and the benchmark names, do not depend on the
-# width of the pane the bench runs in.
+# shout-core sets cfonts' width itself (80 columns, as in the Worker), so
+# the results do not depend on the width of the pane the bench runs in.
 [doc("Render benchmarks for shout-core (criterion).")]
 [positional-arguments]
 bench *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cargo bench -p shout-core --bench render "$@" </dev/null 2>&1 | cat
+    cargo bench -p shout-core --bench render "$@"
 
 # Build the browser-facing wasm bundle via wasm-pack.
 wasm-build:

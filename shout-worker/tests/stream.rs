@@ -300,13 +300,13 @@ fn normal_words_are_never_capped_at_defaults() {
 fn worst_case_is_capped_to_the_ceilings() {
     let r = get(&worst_case_uri());
     assert_eq!(r.status, 200);
-    // 1.36 MB frames: 1 fps is the floor, and 64 MB lasts 46 frames.
-    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=46"));
+    // 1.16 MB frames: 1 fps is the floor, and 64 MB lasts 55 frames.
+    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=55"));
     let anim = animation(r);
-    assert_eq!(anim.capped(), Some((1, 46)));
+    assert_eq!(anim.capped(), Some((1, 55)));
 
     let chunks = run(anim);
-    assert_eq!(chunks.len(), 47, "46 frames plus the reset");
+    assert_eq!(chunks.len(), 56, "55 frames plus the reset");
     let total: usize = chunks.iter().map(String::len).sum();
     // Frames vary a little from frame 0, which the estimate uses.
     assert!(
@@ -331,7 +331,7 @@ fn capped_stream_keeps_its_header_on_head() {
         ..Default::default()
     });
     assert!(matches!(r.body, Body::Empty));
-    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=46"));
+    assert_eq!(r.header(CAPPED_HEADER), Some("fps=1; timeout=55"));
 }
 
 #[test]
