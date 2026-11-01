@@ -86,8 +86,19 @@
 						IP that resets daily. Your raw IP address is never written to disk.
 					</p>
 					<p>
-						Command-line <code>curl</code> calls to shout.sh do not hit Umami — no
-						JavaScript runs there. Only the web playground is instrumented.
+						For a trial comparing the two, the playground also runs a self-hosted
+						instance of Counterscale on Cloudflare at
+						<a href="https://stats.rlew.io">stats.rlew.io</a>. It does not set cookies
+						either; to tell a first visit that day from a repeat one, it relies on your
+						browser's normal HTTP cache. Per page view it records the page URL, the
+						referring URL and any UTM tags, your country (from Cloudflare; your IP is
+						not stored), your browser's user agent (browser, version, device type), and
+						whether it was a first visit that day.
+					</p>
+					<p>
+						Command-line <code>curl</code> calls to shout.sh do not hit Umami or
+						Counterscale — no JavaScript runs there. Only the web playground is
+						instrumented.
 					</p>
 					<p>
 						The server counts requests in Cloudflare Workers Analytics Engine. For each
@@ -104,8 +115,8 @@
 					<p>
 						No ads, no remarketing, no affiliate trackers. No Google Analytics, no
 						Facebook Pixel, nothing like that. The only outbound requests the page makes
-						beyond shout.sh itself are to analytics.rlew.io and Google Fonts (for the
-						JetBrains Mono webfont).
+						beyond shout.sh itself are to analytics.rlew.io, stats.rlew.io and Google
+						Fonts (for the JetBrains Mono webfont).
 					</p>
 
 					<h2>contact</h2>
