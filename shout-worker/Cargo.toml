@@ -22,6 +22,6 @@ sha2 = "=0.10.9"
 # plain Rust, so `cargo test --all` covers routing and stream framing on
 # the host.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-worker = "=0.8.6"
+worker = "=0.8.7"
 futures-util = { version = "0.3", default-features = false }
 getrandom = { version = "0.3", features = ["wasm_js"] }
