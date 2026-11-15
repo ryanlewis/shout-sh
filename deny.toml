@@ -7,3 +7,8 @@ yanked = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+# cfonts v4 is unreleased and pinned to a git rev (see Cargo.toml).
+allow-git = ["https://github.com/dominikwilkowski/cfonts"]
+# A git dependency must name a commit, not a branch or tag.
+required-git-spec = "rev"

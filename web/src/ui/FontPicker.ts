@@ -12,7 +12,6 @@ export const FONTS = [
 	'simple',
 	'simpleblock',
 	'3d',
-	'simple3d',
 	'huge',
 	'console',
 ] as const;

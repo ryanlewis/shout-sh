@@ -120,7 +120,7 @@ check "stream redraws (7-9)" "$((redraws >= 7 && redraws <= 9))" "1"
 # shout-worker/tests/stream.rs. HEAD never streams and does not use up
 # STREAM_LIMIT.
 big="$BASE/rainbow+3d/$(printf 'W%.0s' $(seq 1 200))?ls=10&pad=10&fps=30&timeout=300"
-check "large banner X-Shout-Capped" "$(header x-shout-capped -I --max-time 5 "$big")" "fps=1; timeout=46"
+check "large banner X-Shout-Capped" "$(header x-shout-capped -I --max-time 5 "$big")" "fps=1; timeout=55"
 check "small stream has no X-Shout-Capped" "$(header x-shout-capped -I --max-time 5 "$BASE/fire/boom")" ""
 check "HEAD on stream" "$(curl -s -I --max-time 5 -o /dev/null -w '%{http_code}' "$BASE/rainbow/hi")" "200"
 check "POST on named route" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "$BASE/health")" "405"
