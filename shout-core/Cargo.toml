@@ -8,7 +8,7 @@ description = "Pure render pipeline (cfonts + SGR + shaders + emitters) for shou
 
 [dependencies]
 cfonts = { workspace = true }
-percent-encoding = "2"
+percent-encoding = "=2.3.2"
 
 [dev-dependencies]
 # No rayon or plotters: fewer deps, and it keeps a wasm32-wasip1 build possible.
