@@ -161,7 +161,7 @@ impl Call {
 /// secret the name cannot be turned back into an address, even though an
 /// IPv4 key has only 2^32 possible values.
 pub fn object_name(key: &str, secret: &[u8]) -> String {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use std::fmt::Write;
 
     // HMAC takes a key of any length, so this cannot fail.
