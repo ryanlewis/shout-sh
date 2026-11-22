@@ -13,7 +13,7 @@ homepage = "https://shout.sh"
 readme = "README.md"
 
 [workspace.dependencies]
-cfonts = "1.3.0"
+cfonts = "=1.3.0"
 
 # wasm release profile — shipped to the browser, optimize for size.
 [profile.release]
