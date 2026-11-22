@@ -14,16 +14,16 @@
     "lint": "eslint src tests"
   },
   "devDependencies": {
-    "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^22.10.0",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
-    "esbuild": "^0.25.0",
-    "eslint": "^9.17.0",
-    "happy-dom": "^21.0.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.7.2",
-    "vitest": "^4.0.0"
+    "@resvg/resvg-js": "2.6.2",
+    "@types/node": "22.20.1",
+    "@typescript-eslint/eslint-plugin": "8.65.0",
+    "@typescript-eslint/parser": "8.65.0",
+    "esbuild": "0.25.12",
+    "eslint": "9.39.5",
+    "happy-dom": "21.0.4",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
   },
-  "packageManager": "pnpm@11.11.0+sha512.4463f65fd80ed80d69bc1d4bf163ee94f605c7380fc318bb5b2ebe15f8cd12d49c51a4d59e951b401e764d3b6ca751cbf51bc50ed7001a6bcb4935e684c34882"
+  "packageManager": "pnpm@11.28.12+sha512.94833387e35d503e8ad1010417cdeb82c120e7e69bafdf0a9db0690515beae7159274571e692b96abc2a085d3566fec54381afd978f65f64a85362dfd7e108f7"
 }
