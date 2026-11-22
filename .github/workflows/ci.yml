@@ -18,20 +18,20 @@ permissions:
 
 env:
   # renovate: datasource=crate depName=worker-build
-  WORKER_BUILD_VERSION: 0.8.6
+  WORKER_BUILD_VERSION: 0.9.0
 
 jobs:
   ci:
     name: just ci
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: stable
+          toolchain: 1.100.0
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
@@ -39,7 +39,7 @@ jobs:
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '22'
+          node-version: '22.23.5'
 
       # version comes from web/package.json's hash-pinned packageManager field
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -50,7 +50,7 @@ jobs:
       - name: install just
         env:
           # renovate: datasource=github-releases depName=casey/just
-          JUST_VERSION: 1.58.0
+          JUST_VERSION: 1.59.0
         run: |
           curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | sudo tar xz -C /usr/local/bin just
@@ -58,7 +58,7 @@ jobs:
       - name: install wasm-pack
         env:
           # renovate: datasource=github-releases depName=rustwasm/wasm-pack
-          WASM_PACK_VERSION: v0.15.0
+          WASM_PACK_VERSION: v0.15.1
         run: |
           curl -fsSL "https://github.com/rustwasm/wasm-pack/releases/download/${WASM_PACK_VERSION}/wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar xz --strip-components=1 -C /usr/local/bin \
@@ -103,7 +103,7 @@ jobs:
     name: msrv
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -117,7 +117,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
           targets: wasm32-unknown-unknown
@@ -148,13 +148,13 @@ jobs:
       HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
       # For wrangler.toml and the wrangler lockfile only; nothing is built.
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '22'
+          node-version: '22.23.5'
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
