@@ -1,11 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>ryanlewis/renovate-config"],
+  "extends": [
+    "github>ryanlewis/renovate-config"
+  ],
   "customManagers": [
     {
       "description": "Tool versions pinned as env vars in workflows, marked with a renovate annotation comment. Covers the curl-a-release-tarball installs (just, wasm-pack) and the cargo-installed worker-build, which no built-in manager can see.",
       "customType": "regex",
-      "managerFilePatterns": ["/\\.github/workflows/.*\\.ya?ml$/"],
+      "managerFilePatterns": [
+        "/\\.github/workflows/.*\\.ya?ml$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s*\\n\\s*[A-Z_]+_VERSION: (?<currentValue>[^\\s]+)"
       ]
@@ -14,24 +18,41 @@
   "packageRules": [
     {
       "description": "Cargo on its own PR, separate from the web/ npm tree.",
-      "matchManagers": ["cargo"],
+      "matchManagers": [
+        "cargo"
+      ],
       "groupName": "cargo",
       "groupSlug": "cargo",
       "semanticCommitType": "deps"
     },
     {
       "description": "npm (web/ and shout-worker/) on its own PR.",
-      "matchManagers": ["npm"],
+      "matchManagers": [
+        "npm"
+      ],
       "groupName": "npm",
       "groupSlug": "npm",
       "semanticCommitType": "deps"
     },
     {
       "description": "The worker crate and the worker-build CLI ship together from workers-rs and must match, so they bump in one PR. After the cargo rule so this group wins for the worker crate.",
-      "matchDepNames": ["worker", "worker-build"],
+      "matchDepNames": [
+        "worker",
+        "worker-build"
+      ],
       "groupName": "workers-rs",
       "groupSlug": "workers-rs",
       "semanticCommitType": "deps"
+    },
+    {
+      "description": "getrandom stays on 0.3 until cfonts (via rand) moves to 0.4; two getrandom majors in one wasm build need their own wasm_js setup.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "getrandom"
+      ],
+      "allowedVersions": "<0.4"
     }
   ]
 }
