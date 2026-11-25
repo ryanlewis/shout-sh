@@ -197,7 +197,7 @@ drives animation frames on a timer.
 $ just              # list targets
 $ just test         # cargo test --all
 $ just lint         # fmt check + clippy -D warnings (host and wasm32)
-$ just web-check    # web-build + eslint, tsc and vitest for the ts client
+$ just web-check    # web-build + oxlint, tsc and vitest for the ts client
 $ just smoke        # assets, streaming and HEAD through wrangler dev
 $ just parity       # diff https://shout.sh against a running `just dev`
 $ just bench-compare <checkout> <out>  # render time, wasm size, worker cpu

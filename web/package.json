@@ -11,16 +11,14 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint src tests"
+    "lint": "oxlint --deny-warnings src tests"
   },
   "devDependencies": {
     "@resvg/resvg-js": "2.6.2",
     "@types/node": "26.6.6",
-    "@typescript-eslint/eslint-plugin": "8.73.0",
-    "@typescript-eslint/parser": "8.73.0",
     "esbuild": "0.28.2",
-    "eslint": "10.15.0",
     "happy-dom": "21.0.4",
+    "oxlint": "1.94.0",
     "prettier": "3.10.1",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
