@@ -7,10 +7,6 @@ ignore = [
   # chrono is unmaintained. Only the worker crate pulls it in (0.8.6 and
   # 0.9.0 both), so there is nothing to swap until workers-rs drops it.
   { id = "RUSTSEC-2026-0543", reason = "unmaintained chrono comes in only through worker; no replacement until workers-rs drops it" },
-  # url < 2.5.9 overflows the stack in Url::origin() on nested blob: URLs.
-  # Nothing here or in worker (0.8.6, 0.9.0) calls origin(). Remove this once
-  # Cargo.lock has url 2.5.9 or later (published 2026-11-20).
-  { id = "RUSTSEC-2026-0592", reason = "Url::origin() is never called; drop once url >= 2.5.9 is locked" },
 ]
 
 [sources]

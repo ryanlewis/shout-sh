@@ -1,4 +1,4 @@
 [tools]
 node = "26.13.1"
 "npm:pnpm" = "12.21.0"
-rust = "latest"
+rust = "1.100.0"
