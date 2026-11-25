@@ -41,6 +41,11 @@ web-build: wasm-build
     cp shout-wasm/pkg/shout_wasm_bg.wasm.d.ts web/src/wasm-pkg/
     cd web && pnpm install --frozen-lockfile && pnpm build
 
+# Lint, typecheck and test the TS client. Typecheck needs the wasm module
+# that web-build generates.
+web-check: web-build
+    cd web && pnpm lint && pnpm typecheck && pnpm test
+
 # Watch-mode esbuild for the TS client. Rewrites web/dist/ on each change;
 # on its own it does NOT serve anything. Use `just dev` for the full loop.
 web-dev:
@@ -89,5 +94,5 @@ bench-compare checkout out:
 parity:
     scripts/parity.sh
 
-# Full CI: rebuild web assets, then run lints + tests + the Worker build.
-ci: web-build lint test worker-install worker-build
+# Full CI: build and check the web client, then run lints + tests + the Worker build.
+ci: web-check lint test worker-install worker-build
