@@ -14,9 +14,8 @@
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@wasm/*": ["src/wasm-pkg/*"]
+      "@wasm/*": ["./src/wasm-pkg/*"]
     },
     "types": ["node"]
   },
